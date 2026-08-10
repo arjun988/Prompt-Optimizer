@@ -1,3 +1,3 @@
-from openprompt.strategies.mutations.base import MutationOperator, OptimizeContext, default_operators
+from openprompt.strategies.mutations.base import MutationOperator, OptimizeContext, builtin_operators, default_operators
 
-__all__ = ["MutationOperator", "OptimizeContext", "default_operators"]
+__all__ = ["MutationOperator", "OptimizeContext", "builtin_operators", "default_operators"]

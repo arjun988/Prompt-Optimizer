@@ -27,11 +27,13 @@ from openprompt.core.evaluator.metrics import (
 from openprompt.core.evaluator.regression import check_regression
 from openprompt.core.linter.linter import lint
 from openprompt.core.optimizer.engine import Optimizer
+from openprompt.core.optimizer.multi_model import ModelSpec
 from openprompt.core.parser.parser import parse_file
 from openprompt.core.security.scanner import scan
 from openprompt.core.storage.sqlite import RunStore
 from openprompt.core.versioning.diff import diff_files, diff_versions, save_version
 from openprompt.providers.base import create_provider
+from openprompt.sdk.client import OpenPrompt
 
 app = typer.Typer(
     name="openprompt",
@@ -483,6 +485,94 @@ def template(
         console.print(f"[green]✓[/green] Template written to {output}")
     else:
         console.print(content)
+
+
+@app.command("multi-model")
+def multi_model_cmd(
+    prompt: Path = typer.Argument(..., help="Prompt file to optimize across models."),
+    models: list[str] = typer.Option(
+        ["mock:mock-model"],
+        "--model",
+        "-m",
+        help="Provider:model pairs (repeatable). Example: -m ollama:llama3.2 -m mock:mock-model",
+    ),
+    strategy: Optional[str] = typer.Option(None, "--strategy", "-s"),
+    tests: Optional[Path] = typer.Option(None, "--tests", "-t"),
+) -> None:
+    """Optimize the same prompt across multiple provider/model pairs."""
+    config = find_project_config()
+    client = OpenPrompt(
+        provider=config.model.provider,
+        model=config.model.name,
+        config=config,
+    )
+    result = client.multi_model_optimize(prompt, models, strategy=strategy, tests_path=tests)
+
+    console.print("\n[bold]Multi-Model Optimization[/bold]")
+    console.print(result.to_markdown_table())
+    if result.best_quality:
+        console.print(
+            f"\n[green]Best quality:[/green] {result.best_quality.spec.label} "
+            f"({result.best_quality.result.optimized_score:.1%})"
+        )
+    if result.lowest_cost:
+        console.print(
+            f"[blue]Lowest cost:[/blue] {result.lowest_cost.spec.label} "
+            f"(${result.lowest_cost.result.optimized_cost_usd:.4f})"
+        )
+
+
+@app.command("cost-recommend")
+def cost_recommend_cmd(
+    prompt: Path = typer.Argument(..., help="Prompt to optimize and analyze."),
+    strategy: Optional[str] = typer.Option("rewrite", "--strategy", "-s"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    min_quality: Optional[float] = typer.Option(None, "--min-quality"),
+) -> None:
+    """Recommend best quality/cost tradeoff using Pareto analysis."""
+    config = find_project_config()
+    if provider:
+        config.model.provider = provider
+    if model:
+        config.model.name = model
+
+    client = OpenPrompt(provider=config.model.provider, model=config.model.name, config=config)
+    result = client.optimize(prompt, strategy=strategy)
+    rec = client.recommend_cost_quality(result, min_quality=min_quality)
+
+    console.print("\n[bold]Cost/Quality Recommendation[/bold]")
+    console.print("─" * 40)
+    console.print(f"Recommended: [green]{rec.recommended.prompt_id}[/green]")
+    console.print(f"  Quality:   {rec.recommended.quality:.1%}")
+    console.print(f"  Cost USD:  ${rec.recommended.cost_usd:.4f}")
+    console.print(f"  Tokens:    {rec.recommended.tokens}")
+    console.print(f"  Q/$:       {rec.quality_per_dollar:.2f}")
+    console.print(f"\n[dim]{rec.reason}[/dim]")
+    console.print(f"\nPareto frontier ({len(rec.pareto_frontier)} points):")
+    for point in rec.pareto_frontier:
+        console.print(f"  • {point.prompt_id}: quality={point.quality:.1%}, cost=${point.cost_usd:.4f}")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+    reload: bool = typer.Option(False, "--reload"),
+) -> None:
+    """Start the OpenPrompt REST API server."""
+    try:
+        import uvicorn
+    except ImportError as exc:
+        console.print("[red]Install server extras:[/red] pip install 'openprompt[server]'")
+        raise typer.Exit(1) from exc
+
+    from openprompt.server.app import create_app
+
+    app = create_app()
+    console.print(f"[green]OpenPrompt API[/green] http://{host}:{port}")
+    console.print(f"OpenAPI docs: http://{host}:{port}/docs")
+    uvicorn.run(app, host=host, port=port, reload=reload)
 
 
 def _version_callback(value: bool) -> None:

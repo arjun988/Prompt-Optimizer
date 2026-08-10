@@ -93,16 +93,61 @@ privacy:
 | `openprompt security` | Security scan |
 | `openprompt diff` | Diff two versions |
 | `openprompt template` | Built-in templates |
+| `openprompt multi-model` | Optimize across multiple provider:model pairs |
+| `openprompt cost-recommend` | Quality/cost Pareto recommendation |
+| `openprompt serve` | Start REST API server (FastAPI) |
 
 ## Python SDK
 
 ```python
-from openprompt import Optimizer
+from openprompt import OpenPrompt, ModelSpec
 
-optimizer = Optimizer(provider="mock", model="mock-model")
-result = optimizer.optimize("Summarize this article.")
-print(result.prompt)
-print(f"Score delta: {result.score_delta:+.1%}")
+client = OpenPrompt(provider="mock")
+print(client.lint("Summarize this article.").score)
+
+result = client.optimize("Summarize this article.", strategy="hybrid")
+print(result.prompt, f"{result.score_delta:+.1%}")
+
+# Multi-model comparison
+mm = client.multi_model_optimize(
+    "Summarize this article.",
+    [ModelSpec("mock", "mock-model"), "mock:mock-model"],
+)
+print(mm.to_markdown_table())
+
+# Cost/quality Pareto recommendation
+rec = client.recommend_cost_quality(result)
+print(rec.reason)
+```
+
+### REST API
+
+```bash
+pip install 'openprompt[server]'
+openprompt serve --port 8000
+# Docs: http://127.0.0.1:8000/docs  |  OpenAPI: /openapi.json
+```
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /lint` | Lint prompt |
+| `POST /optimize` | Optimize prompt |
+| `POST /evaluate` | Run tests |
+| `POST /benchmark` | Benchmark prompts |
+| `POST /compress` | Compress tokens |
+| `POST /multi-model/optimize` | Multi-model optimize |
+| `POST /cost/recommend` | Quality/cost recommendation |
+
+### Plugins
+
+Entry points: `openprompt.operators`, `openprompt.evaluators`, `openprompt.strategies`
+
+Example plugin package: [plugins/example/](plugins/example/)
+
+### Legacy import
+
+```python
+from openprompt import Optimizer  # engine-level API (still supported)
 ```
 
 ## Providers
@@ -125,8 +170,12 @@ openprompt/
 ├── core/           # AST, parser, linter, compiler, evaluator, optimizer
 ├── strategies/     # Mutation operators
 ├── providers/      # Model adapters
+├── sdk/            # Stable OpenPrompt client facade
+├── server/         # FastAPI REST API
+├── plugins/        # Plugin discovery + demos
 ├── cli/            # Typer CLI
 └── templates/      # Built-in prompt templates
+plugins/example/    # Standalone plugin package example
 ```
 
 ## Development

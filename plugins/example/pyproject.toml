@@ -1,0 +1,16 @@
+[project]
+name = "openprompt-plugin-example"
+version = "0.1.0"
+description = "Example OpenPrompt plugin package"
+requires-python = ">=3.11"
+dependencies = ["openprompt"]
+
+[project.entry-points."openprompt.operators"]
+uppercase_headers = "openprompt_plugin_example.operator:UppercaseConstraintMutation"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["openprompt_plugin_example"]

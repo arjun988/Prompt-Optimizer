@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from typing import Callable
+
 from openprompt.config.models import ObjectivesConfig, ProjectConfig
 from openprompt.core.ast.models import PromptAST
 from openprompt.core.compiler.renderer import render_generic
@@ -40,14 +42,22 @@ class EvalMetrics:
 
 
 def run_strategy(ast: PromptAST, strategy: str, ctx: StrategyContext) -> OptimizeResult:
-    runners = {
+    from openprompt.plugins.discovery import discover_strategies
+
+    runners = discover_strategies()
+    runner = runners.get(strategy, runners.get("hybrid", _strategy_hybrid))
+    return runner(ast, ctx)
+
+
+def builtin_strategy_runners() -> dict[str, Callable[[PromptAST, StrategyContext], OptimizeResult]]:
+    """Built-in optimization strategies."""
+    return {
         "rewrite": _strategy_rewrite,
         "iterative": _strategy_iterative,
         "evolutionary": _strategy_evolutionary,
         "hybrid": _strategy_hybrid,
         "compress": _strategy_compress,
     }
-    return runners.get(strategy, _strategy_hybrid)(ast, ctx)
 
 
 def _provider_name(ctx: StrategyContext) -> str:
