@@ -1,0 +1,23 @@
+name: Reference Project Prompt Eval
+
+on:
+  push:
+    paths:
+      - "examples/reference-project/**"
+  pull_request:
+
+jobs:
+  prompt-eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-project
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ../..
+      - run: openprompt lint prompts/support.txt
+      - run: openprompt eval prompts/support.txt --tests tests/support_tests.yaml
+      - run: openprompt security prompts/support.txt

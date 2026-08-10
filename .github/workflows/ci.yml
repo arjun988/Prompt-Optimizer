@@ -43,8 +43,11 @@ jobs:
 
       - name: Lint examples (offline)
         run: |
-          openprompt lint examples/summarize.txt
+          openprompt lint examples/summarize/prompt.txt
           openprompt lint examples/code-review.yaml
 
       - name: Inspect examples (offline)
-        run: openprompt inspect examples/summarize.txt
+        run: openprompt inspect examples/summarize/prompt.txt
+
+      - name: Eval summarize directory
+        run: openprompt eval examples/summarize

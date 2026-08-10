@@ -37,6 +37,7 @@ openai = ["openai>=1.0"]
 anthropic = ["anthropic>=0.40"]
 grok = ["openai>=1.0"]
 gemini = ["google-genai>=1.0"]
+semantic = ["sentence-transformers>=3.0"]
 all-providers = ["openai>=1.0", "anthropic>=0.40", "google-genai>=1.0"]
 dev = [
     "pytest>=8.0",
@@ -48,6 +49,9 @@ dev = [
 
 [project.scripts]
 openprompt = "openprompt.cli.main:app"
+
+[project.entry-points."openprompt.operators"]
+clarity = "openprompt.plugins.demo_operator:ClarityMutation"
 
 [project.urls]
 Homepage = "https://github.com/openprompt/openprompt"

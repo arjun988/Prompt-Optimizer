@@ -41,7 +41,7 @@ jobs:
               fi
             done
           else
-            openprompt eval examples/summarize.txt --tests examples/summarize/tests.yaml
+            openprompt eval examples/summarize
           fi
 
       - name: Security scan

@@ -1,0 +1,23 @@
+project: reference-project
+
+model:
+  provider: mock
+  name: mock-model
+
+optimizer:
+  strategy: hybrid
+  eval_budget: 30
+
+evaluation:
+  metrics: [exact_match, contains]
+  judge:
+    provider: mock
+    model: mock-model
+
+regression:
+  min_score_delta: -0.05
+  max_token_increase: 0.30
+
+privacy:
+  telemetry: false
+  storage: local

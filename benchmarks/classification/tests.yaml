@@ -1,0 +1,13 @@
+tests:
+  - name: positive
+    input: "I love this product!"
+    metric: exact_match
+    expected: "positive"
+  - name: negative
+    input: "Worst experience ever."
+    metric: exact_match
+    expected: "negative"
+  - name: neutral
+    input: "It arrived on Tuesday."
+    metric: exact_match
+    expected: "neutral"

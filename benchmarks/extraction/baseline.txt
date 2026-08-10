@@ -1,0 +1,1 @@
+Extract fields from the text.

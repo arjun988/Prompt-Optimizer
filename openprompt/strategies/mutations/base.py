@@ -24,7 +24,7 @@ class MutationOperator(Protocol):
     def mutate(self, ast: PromptAST, context: OptimizeContext) -> PromptAST: ...
 
 
-def default_operators() -> list[MutationOperator]:
+def builtin_operators() -> list[MutationOperator]:
     from openprompt.strategies.mutations.compression import CompressionMutation
     from openprompt.strategies.mutations.constraint import ConstraintMutation
     from openprompt.strategies.mutations.context import ContextMutation
@@ -48,6 +48,13 @@ def default_operators() -> list[MutationOperator]:
     ]
 
 
+def default_operators() -> list[MutationOperator]:
+    """Built-in operators plus entry-point plugins."""
+    from openprompt.plugins.discovery import discover_mutation_operators
+
+    return discover_mutation_operators()
+
+
 OPERATOR_BY_NAME: dict[str, str] = {
     "role": "RoleMutation",
     "constraint": "ConstraintMutation",
@@ -58,4 +65,5 @@ OPERATOR_BY_NAME: dict[str, str] = {
     "compression": "CompressionMutation",
     "security": "SecurityMutation",
     "reasoning": "ReasoningMutation",
+    "clarity": "ClarityMutation",
 }

@@ -9,9 +9,10 @@ OpenPrompt is a local-first developer tool that treats prompts like code: parse 
 ```bash
 pip install -e .
 
-openprompt optimize examples/summarize.txt
-openprompt lint examples/summarize.txt
-openprompt eval examples/summarize.txt --tests examples/summarize/tests.yaml
+openprompt optimize examples/summarize/prompt.txt
+openprompt lint examples/summarize/prompt.txt
+openprompt eval examples/summarize
+openprompt diff v1 v2 --dir prompts/versions
 ```
 
 ## Features
@@ -20,7 +21,11 @@ openprompt eval examples/summarize.txt --tests examples/summarize/tests.yaml
 - **Linter** — Ambiguity, contradictions, missing output format (works offline)
 - **Optimizer** — Strategies: `rewrite`, `iterative`, `evolutionary`, `hybrid`, `compress`
 - **Evaluation** — Exact match, regex, JSON schema, semantic similarity, LLM-as-judge, custom Python evaluators
-- **Security scanner** — Injection patterns, secret detection, untrusted context warnings
+- **Semantic engine** — TF-IDF cosine (default) or sentence-transformers via `[semantic]` extra
+- **NSGA-II** — Multi-objective Pareto selection (quality, tokens, cost)
+- **AST crossover** — Evolutionary merge of prompt structures
+- **Plugin operators** — Entry-point discovery under `openprompt.operators`
+- **Cost modeling** — Provider-specific USD estimates in eval, benchmark, and optimize
 - **Benchmark & compare** — Score and token-compare multiple prompts
 - **Versioning & diff** — Treat prompts like versioned artifacts
 - **Local observability** — SQLite run history (opt-in, no telemetry by default)

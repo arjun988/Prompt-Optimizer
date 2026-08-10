@@ -41,10 +41,20 @@ def save_version(ast: PromptAST, directory: Path, version: str) -> Path:
 
 
 def load_version(directory: Path, version: str) -> PromptAST:
-    path = directory / f"{version}.yaml"
+    path = _version_path(directory, version)
     if not path.exists():
         raise FileNotFoundError(f"Version not found: {path}")
     return parse_file(path)
+
+
+def diff_versions(directory: Path, version_a: str, version_b: str) -> PromptDiff:
+    """Diff two version labels within a version directory."""
+    return diff_prompts(load_version(directory, version_a), load_version(directory, version_b))
+
+
+def _version_path(directory: Path, version: str) -> Path:
+    label = version if version.endswith((".yaml", ".yml")) else f"{version}.yaml"
+    return directory / label
 
 
 def diff_prompts(a: PromptAST, b: PromptAST) -> PromptDiff:

@@ -1,0 +1,9 @@
+prompt:
+  objective:
+    task: extraction
+    description: Extract requested fields faithfully from source text.
+  output:
+    format: json
+    schema:
+      type: object
+      required: [result]

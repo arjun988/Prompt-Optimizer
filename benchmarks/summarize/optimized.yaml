@@ -1,0 +1,14 @@
+prompt:
+  objective:
+    task: summarization
+    description: |
+      Summarize the provided content in 5-7 bullet points.
+      Prioritize main argument, evidence, conclusions, and actionable insights.
+  constraints:
+    - Base summary only on provided information
+    - Avoid repetition and unsupported claims
+  output:
+    format: markdown
+    sections:
+      - Key points
+      - Conclusions

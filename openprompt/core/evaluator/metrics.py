@@ -13,7 +13,7 @@ import yaml
 
 from openprompt.core.ast.models import PromptAST
 from openprompt.core.compiler.renderer import render_generic, render_messages
-from openprompt.providers.base import ModelProvider, create_provider
+from openprompt.providers.base import Message, ModelProvider, create_provider
 
 
 class MetricType(StrEnum):
@@ -51,6 +51,9 @@ class TestResult:
 class EvalReport:
     results: list[TestResult] = field(default_factory=list)
     prompt_tokens: int = 0
+    total_cost_usd: float = 0.0
+    total_latency_ms: float = 0.0
+    judge_score: float | None = None
 
     @property
     def accuracy(self) -> float:
@@ -151,7 +154,9 @@ def score_output(
     if test.metric == MetricType.SEMANTIC:
         if expected is None:
             return 0.0, "Missing expected for semantic comparison."
-        similarity = _semantic_similarity(output, expected)
+        from openprompt.core.evaluator.semantic import semantic_similarity
+
+        similarity = semantic_similarity(output, expected)
         return similarity, f"Semantic similarity: {similarity:.2f}"
 
     if test.metric == MetricType.LLM_JUDGE:
@@ -181,27 +186,42 @@ def run_evaluation(
     *,
     judge_provider: ModelProvider | None = None,
     custom_eval_fn: Callable[[str, str | None], float] | None = None,
+    provider_name: str = "mock",
+    model_name: str | None = None,
 ) -> EvalReport:
     """Run all test cases against a prompt AST."""
+    from openprompt.core.cost.pricing import estimate_cost_usd
+
     prompt_text = render_generic(ast)
     prompt_tokens = max(1, len(prompt_text) // 4)
     results: list[TestResult] = []
+    total_cost = 0.0
+    total_latency = 0.0
+    judge_scores: list[float] = []
 
     for test in tests:
         messages = render_messages(ast)
         user_suffix = f"\n\n---\nInput:\n{test.input}"
-        messages = [
-            *messages[:-1],
-            type(messages[-1])(role=messages[-1].role, content=messages[-1].content + user_suffix),
-        ] if messages else []
+        if messages:
+            last = messages[-1]
+            messages = [*messages[:-1], Message(role=last.role, content=last.content + user_suffix)]
+        else:
+            from openprompt.providers.base import Message
+
+            messages = [Message(role="user", content=user_suffix.strip())]
 
         response = provider.generate(messages)
+        total_cost += estimate_cost_usd(response, provider=provider_name, model=model_name or getattr(provider, "model", None))
+        total_latency += response.latency_ms
+
         score, message = score_output(
             response.content,
             test,
             judge_provider=judge_provider,
             custom_eval_fn=custom_eval_fn,
         )
+        if test.metric == MetricType.LLM_JUDGE:
+            judge_scores.append(score)
         results.append(
             TestResult(
                 test=test,
@@ -212,18 +232,46 @@ def run_evaluation(
             )
         )
 
-    return EvalReport(results=results, prompt_tokens=prompt_tokens)
+    return EvalReport(
+        results=results,
+        prompt_tokens=prompt_tokens,
+        total_cost_usd=total_cost,
+        total_latency_ms=total_latency,
+        judge_score=(sum(judge_scores) / len(judge_scores)) if judge_scores else None,
+    )
 
 
-def _semantic_similarity(a: str, b: str) -> float:
-    """Simple token-overlap similarity (no embedding dependency)."""
-    tokens_a = set(a.lower().split())
-    tokens_b = set(b.lower().split())
-    if not tokens_a or not tokens_b:
-        return 0.0
-    intersection = tokens_a & tokens_b
-    union = tokens_a | tokens_b
-    return len(intersection) / len(union)
+def resolve_prompt_in_directory(directory: Path) -> Path | None:
+    """Resolve the primary prompt file inside a task directory."""
+    if not directory.is_dir():
+        return None
+    for name in ("prompt.txt", "prompt.yaml", "prompt.yml", "prompt.md"):
+        candidate = directory / name
+        if candidate.exists():
+            return candidate
+    for pattern in ("*.yaml", "*.yml", "*.txt", "*.md"):
+        matches = sorted(directory.glob(pattern))
+        matches = [m for m in matches if m.name != "tests.yaml"]
+        if matches:
+            return matches[0]
+    return None
+
+
+def resolve_test_suite(prompt_path: Path) -> Path | None:
+    """Find tests.yaml for a prompt file or task directory."""
+    if prompt_path.is_dir():
+        candidate = prompt_path / "tests.yaml"
+        return candidate if candidate.exists() else None
+
+    candidates = [
+        prompt_path.parent / "tests.yaml",
+        prompt_path.parent / prompt_path.stem / "tests.yaml",
+        prompt_path.with_suffix(".tests.yaml"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _validate_json_schema(data: Any, schema: dict[str, Any]) -> list[str]:
@@ -253,20 +301,3 @@ def _validate_json_schema(data: Any, schema: dict[str, Any]) -> list[str]:
                     errors.append(f"Field {key} must be number.")
 
     return errors
-
-
-def resolve_test_suite(prompt_path: Path) -> Path | None:
-    """Find tests.yaml for a prompt file."""
-    if prompt_path.is_dir():
-        candidate = prompt_path / "tests.yaml"
-        return candidate if candidate.exists() else None
-
-    candidates = [
-        prompt_path.parent / "tests.yaml",
-        prompt_path.parent / prompt_path.stem / "tests.yaml",
-        prompt_path.with_suffix(".tests.yaml"),
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None

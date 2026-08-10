@@ -1,0 +1,16 @@
+tests:
+  - name: summary_has_bullets
+    input: |
+      Artificial intelligence is reshaping healthcare through faster diagnosis and automation.
+    metric: contains
+    expected: "-"
+
+  - name: summary_non_empty
+    input: "Remote work increased productivity for knowledge workers."
+    metric: regex
+    pattern: ".{10,}"
+
+  - name: summary_semantic
+    input: "The experiment showed a 12% improvement in accuracy."
+    metric: semantic
+    expected: "The results demonstrated improved accuracy."

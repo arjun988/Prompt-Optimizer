@@ -1,0 +1,9 @@
+tests:
+  - name: helpful_tone
+    input: "My order is late."
+    metric: contains
+    expected: "Mock"
+  - name: non_empty
+    input: "How do I reset my password?"
+    metric: regex
+    pattern: ".{5,}"

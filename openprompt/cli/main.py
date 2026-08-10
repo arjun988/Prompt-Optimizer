@@ -18,14 +18,19 @@ from openprompt.core.ast.models import PromptAST
 from openprompt.core.benchmark.runner import benchmark_paths, compare_prompts
 from openprompt.core.compiler.renderer import ast_to_yaml_dict, render_generic
 from openprompt.core.evaluator.custom import load_custom_evaluator
-from openprompt.core.evaluator.metrics import load_test_suite, resolve_test_suite, run_evaluation
+from openprompt.core.evaluator.metrics import (
+    load_test_suite,
+    resolve_prompt_in_directory,
+    resolve_test_suite,
+    run_evaluation,
+)
 from openprompt.core.evaluator.regression import check_regression
 from openprompt.core.linter.linter import lint
 from openprompt.core.optimizer.engine import Optimizer
 from openprompt.core.parser.parser import parse_file
 from openprompt.core.security.scanner import scan
 from openprompt.core.storage.sqlite import RunStore
-from openprompt.core.versioning.diff import diff_files, save_version
+from openprompt.core.versioning.diff import diff_files, diff_versions, save_version
 from openprompt.providers.base import create_provider
 
 app = typer.Typer(
@@ -140,12 +145,11 @@ def eval_cmd(
     model_provider = create_provider(config.model.provider, config.model.name)
 
     if target.is_dir():
-        prompt_files = list(target.glob("*.yaml")) + list(target.glob("*.yml")) + list(target.glob("*.txt"))
-        if not prompt_files:
-            console.print("[red]No prompt files found in directory.[/red]")
+        prompt_path = resolve_prompt_in_directory(target)
+        if not prompt_path:
+            console.print(f"[red]No prompt file found in {target}[/red]")
             raise typer.Exit(1)
-        prompt_path = prompt_files[0]
-        tests_path = tests or (target / "tests.yaml")
+        tests_path = tests or resolve_test_suite(target)
     else:
         prompt_path = target
         tests_path = tests or resolve_test_suite(target)
@@ -172,6 +176,8 @@ def eval_cmd(
         model_provider,
         judge_provider=judge_provider,
         custom_eval_fn=custom_eval_fn,
+        provider_name=config.model.provider,
+        model_name=config.model.name,
     )
 
     console.print("\n[bold]Evaluation[/bold]")
@@ -179,6 +185,10 @@ def eval_cmd(
     console.print(f"Accuracy:  [bold]{report.accuracy:.1%}[/bold]")
     console.print(f"Pass rate: {report.pass_rate:.1%}")
     console.print(f"Tests:     {len(report.results)}")
+    console.print(f"Cost:      ${report.total_cost_usd:.4f}")
+    console.print(f"Latency:   {report.total_latency_ms:.0f} ms")
+    if report.judge_score is not None:
+        console.print(f"Judge:     {report.judge_score:.1%}")
 
     for result in report.results:
         status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
@@ -192,6 +202,8 @@ def eval_cmd(
             model=config.model.name,
             score=report.accuracy,
             tokens=report.prompt_tokens,
+            cost_usd=report.total_cost_usd,
+            latency_ms=report.total_latency_ms,
         )
 
     if baseline:
@@ -247,6 +259,7 @@ def optimize(
     table.add_column("Delta")
     table.add_row("Score", f"{result.original_score:.1%}", f"{result.optimized_score:.1%}", f"{result.score_delta:+.1%}")
     table.add_row("Tokens", str(result.original_tokens), str(result.optimized_tokens), f"{result.token_delta_pct:+.1f}%")
+    table.add_row("Cost USD", f"${result.original_cost_usd:.4f}", f"${result.optimized_cost_usd:.4f}", f"{result.cost_delta_pct:+.1f}%")
     table.add_row("Strategy", result.strategy, "", "")
     console.print(table)
 
@@ -285,7 +298,8 @@ def optimize(
             model=config.model.name,
             score=result.optimized_score,
             tokens=result.optimized_tokens,
-            metadata={"original_score": result.original_score},
+            cost_usd=result.optimized_cost_usd,
+            metadata={"original_score": result.original_score, "latency_ms": 0},
         )
 
 
@@ -331,6 +345,10 @@ def benchmark(
         config.model.name = model
 
     model_provider = create_provider(config.model.provider, config.model.name)
+    judge_provider = None
+    if config.evaluation.judge:
+        j = config.evaluation.judge
+        judge_provider = create_provider(j.provider, j.model)
 
     if path.is_dir():
         files = sorted(path.glob("**/*.yaml")) + sorted(path.glob("**/*.yml")) + sorted(path.glob("**/*.txt"))
@@ -341,7 +359,14 @@ def benchmark(
         console.print("[red]No prompt files found.[/red]")
         raise typer.Exit(1)
 
-    report = benchmark_paths(files, model_provider, tests_dir=path if path.is_dir() else path.parent)
+    report = benchmark_paths(
+        files,
+        model_provider,
+        tests_dir=path if path.is_dir() else path.parent,
+        provider_name=config.model.provider,
+        model_name=config.model.name,
+        judge_provider=judge_provider,
+    )
     md = report.to_markdown()
     console.print(md)
 
@@ -372,12 +397,17 @@ def compare(
     ast_b = parse_file(prompt_b)
     test_cases = load_test_suite(tests)
 
-    result = compare_prompts(ast_a, ast_b, model_provider, test_cases)
+    result = compare_prompts(
+        ast_a, ast_b, model_provider, test_cases,
+        provider_name=config.model.provider,
+        model_name=config.model.name,
+    )
     console.print("\n[bold]Comparison[/bold]")
-    console.print(f"  A accuracy: {result['a']['accuracy']:.1%}  ({result['a']['tokens']} tokens)")
-    console.print(f"  B accuracy: {result['b']['accuracy']:.1%}  ({result['b']['tokens']} tokens)")
+    console.print(f"  A accuracy: {result['a']['accuracy']:.1%}  ({result['a']['tokens']} tokens, ${result['a']['cost_usd']:.4f})")
+    console.print(f"  B accuracy: {result['b']['accuracy']:.1%}  ({result['b']['tokens']} tokens, ${result['b']['cost_usd']:.4f})")
     console.print(f"  Δ accuracy: {result['delta_accuracy']:+.1%}")
     console.print(f"  Δ tokens:   {result['delta_tokens']:+d}")
+    console.print(f"  Δ cost:     ${result['delta_cost_usd']:+.4f}")
 
 
 @app.command()
@@ -402,11 +432,17 @@ def security(
 
 @app.command()
 def diff(
-    a: Path = typer.Argument(..., help="First prompt or version file."),
-    b: Path = typer.Argument(..., help="Second prompt or version file."),
+    a: str = typer.Argument(..., help="First prompt path or version label (with --dir)."),
+    b: str = typer.Argument(..., help="Second prompt path or version label (with --dir)."),
+    directory: Optional[Path] = typer.Option(
+        None, "--dir", help="Version directory for `openprompt diff v1 v2 --dir prompts/foo`."
+    ),
 ) -> None:
-    """Diff two prompt versions."""
-    result = diff_files(a, b)
+    """Diff two prompt versions or files."""
+    if directory:
+        result = diff_versions(directory, a, b)
+    else:
+        result = diff_files(Path(a), Path(b))
     console.print("\n[bold]Prompt Diff[/bold]")
     console.print("─" * 40)
     console.print(result.to_text())

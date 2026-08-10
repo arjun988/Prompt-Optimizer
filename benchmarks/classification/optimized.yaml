@@ -1,0 +1,11 @@
+prompt:
+  role:
+    description: a precise sentiment classifier
+    enabled: true
+  objective:
+    task: classification
+    description: Classify input sentiment as positive, negative, or neutral.
+  constraints:
+    - Return exactly one label word
+  output:
+    format: text

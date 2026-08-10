@@ -1,0 +1,6 @@
+tests:
+  - name: json_output
+    input: "Name: Ada, Role: Engineer"
+    metric: json_schema
+    schema:
+      type: object

@@ -16,6 +16,9 @@ class CandidateResult:
     lint_score: int
     tokens: int
     strategy: str
+    quality_score: float = 0.0
+    cost_usd: float = 0.0
+    latency_ms: float = 0.0
     operators_applied: list[str] = field(default_factory=list)
 
 
@@ -32,6 +35,14 @@ class OptimizeResult:
     candidates: list[CandidateResult] = field(default_factory=list)
     failure_analyses: list[FailureAnalysis] = field(default_factory=list)
     report_lines: list[str] = field(default_factory=list)
+    original_cost_usd: float = 0.0
+    optimized_cost_usd: float = 0.0
+
+    @property
+    def cost_delta_pct(self) -> float:
+        if self.original_cost_usd == 0:
+            return 0.0
+        return (self.optimized_cost_usd - self.original_cost_usd) / self.original_cost_usd * 100
 
     @property
     def score_delta(self) -> float:
