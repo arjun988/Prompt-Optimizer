@@ -1,0 +1,53 @@
+name: Prompt Evaluation
+
+on:
+  pull_request:
+    paths:
+      - "prompts/**"
+      - "tests/**"
+      - "openprompt.yaml"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install OpenPrompt
+        run: pip install -e .
+
+      - name: Lint prompts (offline)
+        run: |
+          if [ -d prompts ]; then
+            for f in prompts/*.{txt,yaml,yml}; do
+              [ -f "$f" ] && openprompt lint "$f"
+            done
+          fi
+
+      - name: Evaluate prompts
+        run: |
+          if [ -f openprompt.yaml ] && [ -d prompts ] && [ -d tests ]; then
+            for f in prompts/*.{txt,yaml,yml}; do
+              [ -f "$f" ] || continue
+              name=$(basename "$f" | sed 's/\.[^.]*$//')
+              if [ -f "tests/${name}_tests.yaml" ]; then
+                openprompt eval "$f" --tests "tests/${name}_tests.yaml" --fail-on-regression || true
+              fi
+            done
+          else
+            openprompt eval examples/summarize.txt --tests examples/summarize/tests.yaml
+          fi
+
+      - name: Security scan
+        run: |
+          if [ -d prompts ]; then
+            for f in prompts/*.{txt,yaml,yml}; do
+              [ -f "$f" ] && openprompt security "$f"
+            done
+          fi

@@ -1,0 +1,6 @@
+prompt:
+  objective:
+    task: code_review
+    raw: Analyze this code and tell me what's wrong.
+  context:
+    - source_code

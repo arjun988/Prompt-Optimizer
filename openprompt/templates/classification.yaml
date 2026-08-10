@@ -1,0 +1,24 @@
+prompt:
+  schema_version: "1.0"
+  metadata:
+    name: classification
+    tags: [classification, labels]
+  role:
+    description: a precise classifier that follows label definitions strictly
+    enabled: true
+  objective:
+    task: classification
+    description: Classify the input into exactly one of the defined labels.
+  constraints:
+    - Return only the label name unless format specifies otherwise
+    - If ambiguous, choose the closest label and note low confidence
+  output:
+    format: json
+    schema:
+      type: object
+      required: [label, confidence]
+      properties:
+        label:
+          type: string
+        confidence:
+          type: number

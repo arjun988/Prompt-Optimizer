@@ -1,0 +1,3 @@
+Classify the sentiment as positive, negative, or neutral.
+
+Input: {text}

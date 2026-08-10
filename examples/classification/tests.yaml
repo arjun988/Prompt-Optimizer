@@ -1,0 +1,15 @@
+tests:
+  - name: positive_sentiment
+    input: "I absolutely love this product, best purchase ever!"
+    metric: exact_match
+    expected: "positive"
+
+  - name: negative_sentiment
+    input: "Terrible experience, would not recommend."
+    metric: exact_match
+    expected: "negative"
+
+  - name: neutral_sentiment
+    input: "It arrived on Tuesday."
+    metric: exact_match
+    expected: "neutral"

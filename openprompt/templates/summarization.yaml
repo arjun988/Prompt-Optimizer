@@ -1,0 +1,23 @@
+prompt:
+  schema_version: "1.0"
+  metadata:
+    name: summarization
+    tags: [summarization, content]
+  objective:
+    task: summarization
+    description: Summarize the provided content in 5-7 bullet points.
+  constraints:
+    - Prioritize main argument, evidence, and conclusions
+    - Avoid unnecessary background and repetition
+    - Do not add unsupported claims
+  output:
+    format: markdown
+    sections:
+      - Key points
+      - Main argument
+      - Conclusions
+      - Actionable insights
+  verification:
+    enabled: true
+    steps:
+      - Confirm all bullets are grounded in the source material

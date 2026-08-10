@@ -1,0 +1,22 @@
+prompt:
+  schema_version: "1.0"
+  metadata:
+    name: extraction
+    tags: [extraction, structured-output]
+  objective:
+    task: extraction
+    description: Extract the requested fields from the provided text faithfully.
+  context:
+    - "Source text: {text}"
+    - "Fields to extract: {fields}"
+  constraints:
+    - Extract only information present in the source
+    - Use null for missing fields
+  output:
+    format: json
+    schema:
+      type: object
+  verification:
+    enabled: true
+    steps:
+      - Verify each extracted value appears in the source text
