@@ -55,7 +55,7 @@ def _load_mutation_operators() -> list[MutationOperator]:
     for entry in _entry_points(ENTRY_GROUP_OPERATORS):
         try:
             loaded = entry.load()
-            op = loaded() if _is_factory(loaded) else loaded
+            op = _coerce_operator(loaded)
             if hasattr(op, "mutate") and hasattr(op, "name"):
                 if op.name in seen:
                     logger.warning("Duplicate operator plugin ignored: %s", op.name)
@@ -128,3 +128,12 @@ def _load_strategies() -> dict[str, StrategyRunner]:
 
 def _is_factory(obj: object) -> bool:
     return callable(obj) and not isinstance(obj, type) and not hasattr(obj, "run")
+
+
+def _coerce_operator(loaded: object) -> object:
+    """Instantiate operator classes; call factory functions."""
+    if isinstance(loaded, type) and hasattr(loaded, "mutate"):
+        return loaded()
+    if _is_factory(loaded):
+        return loaded()
+    return loaded

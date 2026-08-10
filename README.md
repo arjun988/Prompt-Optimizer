@@ -4,52 +4,100 @@
 
 Analyze. Optimize. Evaluate. Benchmark.
 
-OpenPrompt is a local-first developer tool that treats prompts like code: parse them into a structured AST, lint for issues, optimize with evaluation-driven strategies, and prove improvements with test suites.
+OpenPrompt treats prompts like code: parse into a structured AST, lint for issues, optimize with evaluation-driven strategies, and prove improvements with test suites.
 
 ```bash
 pip install -e .
 
-openprompt optimize examples/summarize/prompt.txt
+# Offline lint (no API key)
 openprompt lint examples/summarize/prompt.txt
+
+# Optimize with bundled tests (mock provider — no API key)
+openprompt optimize examples/summarize --tests examples/summarize/tests.yaml --strategy hybrid
+
+# Evaluate a task directory (prompt.txt + tests.yaml)
 openprompt eval examples/summarize
-openprompt diff v1 v2 --dir prompts/versions
+
+# Real model (requires provider API key or local Ollama)
+openprompt optimize examples/summarize --provider ollama --model llama3.2
 ```
 
 ## Features
 
-- **Prompt AST** — Parse text/YAML into a structured intermediate representation
-- **Linter** — Ambiguity, contradictions, missing output format (works offline)
-- **Optimizer** — Strategies: `rewrite`, `iterative`, `evolutionary`, `hybrid`, `compress`
-- **Evaluation** — Exact match, regex, JSON schema, semantic similarity, LLM-as-judge, custom Python evaluators
-- **Semantic engine** — TF-IDF cosine (default) or sentence-transformers via `[semantic]` extra
-- **NSGA-II** — Multi-objective Pareto selection (quality, tokens, cost)
-- **AST crossover** — Evolutionary merge of prompt structures
-- **Plugin operators** — Entry-point discovery under `openprompt.operators`
-- **Cost modeling** — Provider-specific USD estimates in eval, benchmark, and optimize
-- **Benchmark & compare** — Score and token-compare multiple prompts
-- **Versioning & diff** — Treat prompts like versioned artifacts
-- **Local observability** — SQLite run history (opt-in, no telemetry by default)
+- **Prompt AST (v1.1)** — Text/YAML → structured IR (RAG, agent/tools, media attachments)
+- **Linter** — Ambiguity, contradictions, missing output format (offline)
+- **Optimizer** — `rewrite`, `iterative`, `evolutionary`, `hybrid`, `compress`, `rag`, `agent`, `grpo`, `few_shot`, `extraction`
+- **Dataset extraction** — PDF/image samples + labeled JSON; optimize prompts for your data
+- **Evaluation** — Exact match, regex, JSON schema, semantic, LLM judge, plugin evaluators
+- **Multimodal** — PDF text extraction + vision attachments (OpenAI, Gemini)
+- **NSGA-II + bandit** — Multi-objective selection with LinUCB operator choice
+- **Plugins** — Entry points for operators, evaluators, strategies
+- **REST API** — `openprompt serve` with auth, CORS, rate limits
+- **Local observability** — SQLite run history (no telemetry by default)
 
 ## Quick Start
 
 ```bash
-# Initialize a project
+# Install
+pip install -e .
+
+# Scaffold a project (task layout: prompts/example/prompt.txt + tests.yaml)
 openprompt init
 
-# Lint (offline — no API key needed)
-openprompt lint prompts/example.txt
+# Examples in this repo
+openprompt lint examples/summarize/prompt.txt
+openprompt eval examples/summarize
+openprompt optimize examples/summarize --tests examples/summarize/tests.yaml
 
-# Optimize (uses mock provider by default)
-openprompt optimize prompts/example.txt --strategy hybrid
+# JSON output for CI
+openprompt eval examples/summarize --json
+openprompt optimize examples/summarize --tests examples/summarize/tests.yaml --json
 
-# Evaluate against tests
-openprompt eval prompts/example.txt --tests tests/example_tests.yaml
+# Compress tokens
+openprompt compress examples/summarize/prompt.txt
 
-# Use a real model
-openprompt optimize prompts/example.txt --provider ollama --model llama3.2
-openprompt optimize prompts/example.txt --provider gemini --model gemini-2.0-flash
-openprompt optimize prompts/example.txt --provider grok --model grok-2-latest
+# Security scan
+openprompt security examples/summarize/prompt.txt
 ```
+
+### Providers
+
+| Provider | Install | Env var |
+|----------|---------|---------|
+| `mock` | built-in | — (heuristic scores only; good for smoke tests) |
+| `ollama` | built-in | `OLLAMA_HOST` |
+| `openai` | `pip install 'openprompt[openai]'` | `OPENAI_API_KEY` |
+| `anthropic` | `pip install 'openprompt[anthropic]'` | `ANTHROPIC_API_KEY` |
+| `grok` | `pip install 'openprompt[grok]'` | `XAI_API_KEY` |
+| `gemini` | `pip install 'openprompt[gemini]'` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` |
+| `openrouter` | built-in | `OPENROUTER_API_KEY` |
+
+```bash
+openprompt optimize examples/summarize \
+  --provider openai --model gpt-4o-mini \
+  --tests examples/summarize/tests.yaml
+```
+
+## Extraction datasets (PDF / images)
+
+For “optimize a prompt to extract perfectly from my documents”:
+
+```bash
+pip install -e ".[media]"   # pypdf for PDF text extraction
+
+openprompt dataset init --name invoice --path datasets/invoice
+# Add samples/*.pdf and labels/*.json
+
+openprompt dataset eval datasets/invoice/dataset.yaml \
+  --prompt prompts/invoice/prompt.yaml
+
+openprompt dataset optimize datasets/invoice/dataset.yaml \
+  --prompt prompts/invoice/prompt.yaml \
+  --strategy extraction \
+  --vision   # attach images/PDFs for vision models
+```
+
+See [examples/extraction-dataset/README.md](examples/extraction-dataset/README.md).
 
 ## Configuration
 
@@ -64,14 +112,16 @@ model:
 
 optimizer:
   strategy: hybrid
-  max_iterations: 5
   eval_budget: 100
+  few_shot_count: 3
+
+meta_model:          # GRPO proposer (optional)
+  provider: openai
+  model: gpt-4o-mini
 
 evaluation:
-  metrics: [exact_match, format]
-  judge:
-    provider: ollama
-    model: llama3.2
+  pass_threshold: 0.85
+  dataset_path: datasets/invoice/dataset.yaml
 
 privacy:
   telemetry: false
@@ -82,20 +132,24 @@ privacy:
 
 | Command | Description |
 |---------|-------------|
-| `openprompt init` | Create project scaffold |
-| `openprompt lint` | Offline prompt analysis |
+| `openprompt init` | Scaffold project + example task |
+| `openprompt lint` | Offline prompt analysis (`--json`) |
 | `openprompt inspect` | Show parsed AST |
-| `openprompt optimize` | Optimize a prompt |
-| `openprompt eval` | Run test suite |
+| `openprompt optimize` | Optimize (`--tests`, `--strategy`, `--json`) |
+| `openprompt eval` | Run test suite (`--fail-on-regression`) |
 | `openprompt compress` | Reduce tokens |
 | `openprompt benchmark` | Compare multiple prompts |
-| `openprompt compare` | A/B compare on tests |
-| `openprompt security` | Security scan |
-| `openprompt diff` | Diff two versions |
+| `openprompt compare` | A/B on tests |
+| `openprompt security` | Security scan (`--fail-on-findings`) |
+| `openprompt diff` | Diff versions (`--dir`) |
 | `openprompt template` | Built-in templates |
-| `openprompt multi-model` | Optimize across multiple provider:model pairs |
-| `openprompt cost-recommend` | Quality/cost Pareto recommendation |
-| `openprompt serve` | Start REST API server (FastAPI) |
+| `openprompt multi-model` | Optimize across models (`-m provider:model`) |
+| `openprompt cost-recommend` | Quality/cost Pareto pick |
+| `openprompt tune` | Bayesian-style hyperparameter tuning |
+| `openprompt dataset init` | Scaffold PDF/image extraction dataset |
+| `openprompt dataset eval` | Eval prompt on dataset |
+| `openprompt dataset optimize` | Optimize for extraction |
+| `openprompt serve` | REST API (`--api-key`) |
 
 ## Python SDK
 
@@ -105,91 +159,59 @@ from openprompt import OpenPrompt, ModelSpec
 client = OpenPrompt(provider="mock")
 print(client.lint("Summarize this article.").score)
 
-result = client.optimize("Summarize this article.", strategy="hybrid")
-print(result.prompt, f"{result.score_delta:+.1%}")
-
-# Multi-model comparison
-mm = client.multi_model_optimize(
-    "Summarize this article.",
-    [ModelSpec("mock", "mock-model"), "mock:mock-model"],
+result = client.optimize(
+    "examples/summarize",
+    strategy="hybrid",
+    tests_path="examples/summarize/tests.yaml",
 )
-print(mm.to_markdown_table())
-
-# Cost/quality Pareto recommendation
-rec = client.recommend_cost_quality(result)
-print(rec.reason)
+print(result.prompt, f"{result.score_delta:+.1%}")
 ```
 
 ### REST API
 
 ```bash
 pip install 'openprompt[server]'
-openprompt serve --port 8000
-# Docs: http://127.0.0.1:8000/docs  |  OpenAPI: /openapi.json
+export OPENPROMPT_API_KEY=your-secret
+openprompt serve --api-key your-secret
+# Docs: http://127.0.0.1:8000/docs
 ```
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /lint` | Lint prompt |
-| `POST /optimize` | Optimize prompt |
-| `POST /evaluate` | Run tests |
-| `POST /benchmark` | Benchmark prompts |
-| `POST /compress` | Compress tokens |
-| `POST /multi-model/optimize` | Multi-model optimize |
-| `POST /cost/recommend` | Quality/cost recommendation |
+Send `X-API-Key: your-secret` on all endpoints except `/health`.
 
-### Plugins
-
-Entry points: `openprompt.operators`, `openprompt.evaluators`, `openprompt.strategies`
-
-Example plugin package: [plugins/example/](plugins/example/)
-
-### Legacy import
-
-```python
-from openprompt import Optimizer  # engine-level API (still supported)
-```
-
-## Providers
-
-| Provider | Install | Env var |
-|----------|---------|---------|
-| `mock` | (built-in) | — |
-| `ollama` | (built-in) | `OLLAMA_HOST` |
-| `openai` | `pip install 'openprompt[openai]'` | `OPENAI_API_KEY` |
-| `anthropic` | `pip install 'openprompt[anthropic]'` | `ANTHROPIC_API_KEY` |
-| `grok` | `pip install 'openprompt[grok]'` | `XAI_API_KEY` |
-| `gemini` | `pip install 'openprompt[gemini]'` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` |
-
-Install all cloud providers at once: `pip install 'openprompt[all-providers]'`
-
-## Project Structure
+## Examples layout
 
 ```
-openprompt/
-├── core/           # AST, parser, linter, compiler, evaluator, optimizer
-├── strategies/     # Mutation operators
-├── providers/      # Model adapters
-├── sdk/            # Stable OpenPrompt client facade
-├── server/         # FastAPI REST API
-├── plugins/        # Plugin discovery + demos
-├── cli/            # Typer CLI
-└── templates/      # Built-in prompt templates
-plugins/example/    # Standalone plugin package example
+examples/
+├── summarize/
+│   ├── prompt.txt
+│   └── tests.yaml
+├── classification/
+│   ├── prompt.txt
+│   └── tests.yaml
+├── code-review.yaml
+└── extraction-dataset/README.md
+```
+
+After `openprompt init`:
+
+```
+prompts/example/prompt.txt
+prompts/example/tests.yaml
+openprompt.yaml
 ```
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pre-commit install
 pytest
 ruff check openprompt
+python scripts/export_openapi.py   # refresh openapi.json
 ```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).
 
 ## Documentation
 

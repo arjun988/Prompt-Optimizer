@@ -43,6 +43,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+RULE = "-" * 40
 
 dataset_app = typer.Typer(help="Extraction dataset workflows (PDF/image).")
 app.add_typer(dataset_app, name="dataset")
@@ -90,7 +91,7 @@ def init(
             encoding="utf-8",
         )
 
-    console.print(f"[green]✓[/green] Initialized OpenPrompt project in {root}")
+    console.print(f"[green]OK[/green] Initialized OpenPrompt project in {root}")
     console.print("  openprompt.yaml")
     console.print("  prompts/example/prompt.txt")
     console.print("  prompts/example/tests.yaml")
@@ -128,7 +129,7 @@ def lint(
         return
 
     console.print("\n[bold]Prompt Analysis[/bold]")
-    console.print("─" * 40)
+    console.print(RULE)
     for issue in report.issues:
         if issue.severity.value == "ok":
             console.print(f"[green]{issue.symbol}[/green] {issue.message}")
@@ -137,7 +138,7 @@ def lint(
         else:
             console.print(f"[yellow]{issue.symbol}[/yellow] {issue.message}")
         if issue.recommendation and issue.severity.value != "ok":
-            console.print(f"   [dim]→ {issue.recommendation}[/dim]")
+            console.print(f"   [dim]-> {issue.recommendation}[/dim]")
 
     console.print(f"\n[bold]Score:[/bold] {report.score}/100 [dim](heuristic — run eval for measured score)[/dim]")
 
@@ -253,7 +254,7 @@ def eval_cmd(
         return
 
     console.print("\n[bold]Evaluation[/bold]")
-    console.print("─" * 40)
+    console.print(RULE)
     console.print(f"Accuracy:  [bold]{report.accuracy:.1%}[/bold]")
     console.print(f"Pass rate: {report.pass_rate:.1%}")
     console.print(f"Tests:     {len(report.results)}")
@@ -290,7 +291,7 @@ def eval_cmd(
         regression = check_regression(baseline_report, report, config.regression)
         console.print("\n[bold]Regression Check[/bold]")
         for msg in regression.messages:
-            icon = "[green]✓[/green]" if regression.passed else "[red]✗[/red]"
+            icon = "[green]OK[/green]" if regression.passed else "[red]FAIL[/red]"
             console.print(f"  {icon} {msg}")
         if fail_on_regression and not regression.passed:
             raise typer.Exit(1)
@@ -361,9 +362,9 @@ def optimize(
     if result.lint_report:
         for issue in result.lint_report.issues:
             if issue.severity.value in {"error", "warning"}:
-                console.print(f"  [yellow]⚠[/yellow] {issue.message}")
+                console.print(f"  [yellow]![/yellow] {issue.message}")
 
-    console.print("[green]✓[/green] Optimization complete\n")
+    console.print("[green]OK[/green] Optimization complete\n")
 
     table = Table(title="Results")
     table.add_column("Metric")
@@ -385,14 +386,14 @@ def optimize(
             )
 
     console.print("\n[bold]Recommended Prompt[/bold]")
-    console.print("─" * 40)
+    console.print(RULE)
     console.print(Panel(result.prompt, border_style="green"))
 
     if result.failure_analyses:
         console.print("\n[bold]Failure Analysis[/bold]")
         for fa in result.failure_analyses[:5]:
-            console.print(f"  [red]✗[/red] {fa.test_name}: {fa.category}")
-            console.print(f"     [dim]→ {fa.recommendation} ({fa.recommended_operator})[/dim]")
+            console.print(f"  [red]X[/red] {fa.test_name}: {fa.category}")
+            console.print(f"     [dim]-> {fa.recommendation} ({fa.recommended_operator})[/dim]")
 
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -401,7 +402,7 @@ def optimize(
             output.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         else:
             output.write_text(result.prompt, encoding="utf-8")
-        console.print(f"\n[green]✓[/green] Saved to {output}")
+        console.print(f"\n[green]OK[/green] Saved to {output}")
 
     if config.privacy.storage == "local":
         store = RunStore(config.privacy.db_path)
@@ -436,12 +437,12 @@ def compress(
     result = optimizer.optimize(prompt, strategy="compress")
 
     reduction = -result.token_delta_pct
-    console.print(f"[bold]Compression[/bold]: {result.original_tokens} → {result.optimized_tokens} tokens ({reduction:.1f}% reduction)")
+    console.print(f"[bold]Compression[/bold]: {result.original_tokens} -> {result.optimized_tokens} tokens ({reduction:.1f}% reduction)")
     console.print(Panel(result.prompt))
 
     if output:
         output.write_text(result.prompt, encoding="utf-8")
-        console.print(f"[green]✓[/green] Saved to {output}")
+        console.print(f"[green]OK[/green] Saved to {output}")
 
 
 @app.command()
@@ -488,7 +489,7 @@ def benchmark(
         output.write_text(md, encoding="utf-8")
         json_path = output.with_suffix(".json")
         json_path.write_text(report.to_json(), encoding="utf-8")
-        console.print(f"[green]✓[/green] Report saved to {output}")
+        console.print(f"[green]OK[/green] Report saved to {output}")
 
 
 @app.command()
@@ -552,14 +553,14 @@ def security(
         )
     else:
         console.print("\n[bold]Security Analysis[/bold]")
-        console.print("─" * 40)
+        console.print(RULE)
         for finding in report.findings:
             color = {"critical": "red", "high": "red", "medium": "yellow", "low": "yellow", "info": "green"}.get(
                 finding.severity, "white"
             )
-            console.print(f"[{color}]●[/{color}] [{finding.severity}] {finding.message}")
+            console.print(f"[{color}]*[/{color}] [{finding.severity}] {finding.message}")
             if finding.recommendation:
-                console.print(f"   [dim]→ {finding.recommendation}[/dim]")
+                console.print(f"   [dim]-> {finding.recommendation}[/dim]")
         console.print(f"\n[bold]Security score:[/bold] {report.score}/100")
 
     if fail_on_findings and any(f.severity in {"critical", "high", "medium"} for f in report.findings):
@@ -580,7 +581,7 @@ def diff(
     else:
         result = diff_files(Path(a), Path(b))
     console.print("\n[bold]Prompt Diff[/bold]")
-    console.print("─" * 40)
+    console.print(RULE)
     console.print(result.to_text())
 
 
@@ -593,7 +594,7 @@ def save(
     """Save a prompt as a versioned YAML file."""
     ast = parse_file(prompt)
     path = save_version(ast, directory, version)
-    console.print(f"[green]✓[/green] Saved {path}")
+    console.print(f"[green]OK[/green] Saved {path}")
 
 
 @app.command()
@@ -616,7 +617,7 @@ def template(
     content = template_path.read_text(encoding="utf-8")
     if output:
         output.write_text(content, encoding="utf-8")
-        console.print(f"[green]✓[/green] Template written to {output}")
+        console.print(f"[green]OK[/green] Template written to {output}")
     else:
         console.print(content)
 
@@ -681,7 +682,7 @@ def cost_recommend_cmd(
     rec = client.recommend_cost_quality(result, min_quality=min_quality)
 
     console.print("\n[bold]Cost/Quality Recommendation[/bold]")
-    console.print("─" * 40)
+    console.print(RULE)
     console.print(f"Recommended: [green]{rec.recommended.prompt_id}[/green]")
     console.print(f"  Quality:   {rec.recommended.quality:.1%}")
     console.print(f"  Cost USD:  ${rec.recommended.cost_usd:.4f}")
@@ -762,7 +763,7 @@ def dataset_init(
         ),
         encoding="utf-8",
     )
-    console.print(f"[green]✓[/green] Dataset scaffold at {root}")
+    console.print(f"[green]OK[/green] Dataset scaffold at {root}")
     console.print("  dataset.yaml, samples/, labels/, example_pool.yaml")
 
 
@@ -844,8 +845,8 @@ def dataset_optimize(
     client = OpenPrompt(provider=config.model.provider, model=config.model.name, config=config)
     result = client.optimize(ast, strategy=strategy)
 
-    console.print(f"[green]✓[/green] Extraction optimize complete ({result.strategy})")
-    console.print(f"Score: {result.original_score:.1%} → {result.optimized_score:.1%}")
+    console.print(f"[green]OK[/green] Extraction optimize complete ({result.strategy})")
+    console.print(f"Score: {result.original_score:.1%} -> {result.optimized_score:.1%}")
     console.print(Panel(result.prompt))
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -882,7 +883,7 @@ def tune(
 
     client = OpenPrompt(provider=config.model.provider, model=config.model.name, config=config)
     result = client.optimize(prompt, strategy=strategy or str(config.optimizer.strategy))
-    console.print(f"\n[green]✓[/green] Optimized with tuned params — score {result.optimized_score:.1%}")
+    console.print(f"\n[green]OK[/green] Optimized with tuned params - score {result.optimized_score:.1%}")
 
 
 @app.command()
