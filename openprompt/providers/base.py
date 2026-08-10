@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Iterator, Literal, Protocol
+
+from openprompt.providers.credentials import resolve_api_key, resolve_base_url
 
 
 @dataclass
@@ -35,6 +38,11 @@ class ModelProvider(Protocol):
 
     def generate(self, messages: list[Message], **kwargs: Any) -> ModelResponse: ...
 
+    def stream(self, messages: list[Message], **kwargs: Any) -> Iterator[str]: ...
+
+
+CLOUD_PROVIDERS = {"openai", "anthropic", "ollama", "grok", "gemini", "openrouter"}
+
 
 def create_provider(
     provider: str,
@@ -42,33 +50,57 @@ def create_provider(
     *,
     api_key: str | None = None,
     base_url: str | None = None,
+    resilient: bool = True,
+    warn_mock: bool = True,
 ) -> ModelProvider:
-    """Instantiate a provider by name."""
+    """Instantiate a provider by name with env credentials and optional retry wrapper."""
+    resolved_key = resolve_api_key(provider, api_key)
+    resolved_base = resolve_base_url(provider, base_url)
+
     if provider == "mock":
         from openprompt.providers.mock import MockProvider
 
-        return MockProvider(model=model)
+        inner = MockProvider(model=model)
+        if warn_mock:
+            warnings.warn(
+                "Using mock provider — optimization scores are heuristic only. "
+                "Configure a real provider (openai, anthropic, ollama, etc.) for meaningful results.",
+                stacklevel=2,
+            )
+        return inner
+
     if provider == "openai":
         from openprompt.providers.openai_provider import OpenAIProvider
 
-        return OpenAIProvider(model=model, api_key=api_key, base_url=base_url)
-    if provider == "anthropic":
+        inner = OpenAIProvider(model=model, api_key=resolved_key, base_url=resolved_base)
+    elif provider == "anthropic":
         from openprompt.providers.anthropic_provider import AnthropicProvider
 
-        return AnthropicProvider(model=model, api_key=api_key)
-    if provider == "ollama":
+        inner = AnthropicProvider(model=model, api_key=resolved_key)
+    elif provider == "ollama":
         from openprompt.providers.ollama_provider import OllamaProvider
 
-        return OllamaProvider(model=model, base_url=base_url)
-    if provider == "grok":
+        inner = OllamaProvider(model=model, base_url=resolved_base)
+    elif provider == "grok":
         from openprompt.providers.grok_provider import GrokProvider
 
-        return GrokProvider(model=model, api_key=api_key, base_url=base_url)
-    if provider == "gemini":
+        inner = GrokProvider(model=model, api_key=resolved_key, base_url=resolved_base)
+    elif provider == "gemini":
         from openprompt.providers.gemini_provider import GeminiProvider
 
-        return GeminiProvider(model=model, api_key=api_key)
-    raise ValueError(
-        f"Unknown provider: {provider!r}. "
-        "Supported: mock, openai, anthropic, ollama, grok, gemini"
-    )
+        inner = GeminiProvider(model=model, api_key=resolved_key)
+    elif provider == "openrouter":
+        from openprompt.providers.openrouter_provider import OpenRouterProvider
+
+        inner = OpenRouterProvider(model=model, api_key=resolved_key, base_url=resolved_base)
+    else:
+        raise ValueError(
+            f"Unknown provider: {provider!r}. "
+            "Supported: mock, openai, anthropic, ollama, grok, gemini, openrouter"
+        )
+
+    if resilient and provider in CLOUD_PROVIDERS:
+        from openprompt.providers.resilient import ResilientProvider
+
+        return ResilientProvider(inner)
+    return inner

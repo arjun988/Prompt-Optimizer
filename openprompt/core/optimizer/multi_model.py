@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from openprompt.config.models import ProjectConfig
+from openprompt.config.models import ProjectConfig, find_project_config
 from openprompt.core.compiler.renderer import render_generic, render_messages
-from openprompt.core.optimizer.engine import Optimizer
+from openprompt.core.concurrency import parallel_map
 from openprompt.core.optimizer.models import OptimizeResult
 
 
@@ -88,34 +88,37 @@ def multi_model_optimize(
     api_key: str | None = None,
     base_url: str | None = None,
 ) -> MultiModelOptimizeResult:
-    """Optimize the same prompt across multiple models and compare."""
-    output = MultiModelOptimizeResult()
+    """Optimize the same prompt across multiple models in parallel."""
+    cfg = config or find_project_config()
+    workers = cfg.optimizer.parallel_workers
 
-    for spec in models:
-        optimizer = Optimizer(
+    def _run_one(spec: ModelSpec) -> ModelOptimizeResult:
+        from openprompt.sdk.client import OpenPrompt
+
+        client = OpenPrompt(
             provider=spec.provider,
             model=spec.model,
-            config=config,
+            config=cfg.model_copy_deep(),
             api_key=api_key,
             base_url=base_url,
+            warn_mock=False,
         )
-        result = optimizer.optimize(prompt, strategy=strategy, tests_path=tests_path)
+        result = client.optimize(prompt, strategy=strategy, tests_path=tests_path)
         rendered = render_generic(result.optimized)
         messages = render_messages(result.optimized, provider=_map_provider_format(spec.provider))
-        output.results.append(
-            ModelOptimizeResult(
-                spec=spec,
-                result=result,
-                rendered_prompt=rendered,
-                message_count=len(messages),
-            )
+        return ModelOptimizeResult(
+            spec=spec,
+            result=result,
+            rendered_prompt=rendered,
+            message_count=len(messages),
         )
 
-    return output
+    results = parallel_map(models, _run_one, max_workers=workers)
+    return MultiModelOptimizeResult(results=results)
 
 
 def _map_provider_format(provider: str) -> str:
-    if provider in {"openai", "grok", "ollama", "mock"}:
+    if provider in {"openai", "grok", "ollama", "mock", "openrouter"}:
         return "openai"
     if provider == "anthropic":
         return "anthropic"

@@ -52,6 +52,7 @@ class OptimizeResponse(BaseModel):
     cost_delta_pct: float
     strategy: str
     report_lines: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class EvaluateRequest(BaseModel):
@@ -68,6 +69,7 @@ class EvaluateResponse(BaseModel):
     total_cost_usd: float
     total_latency_ms: float
     judge_score: float | None = None
+    warnings: list[str] = Field(default_factory=list)
     results: list[dict[str, Any]]
 
 

@@ -65,3 +65,7 @@ class MockProvider:
             return "positive"
 
         return f"Mock response ({digest}) for the given prompt."
+
+    def stream(self, messages: list[Message], **kwargs: Any):
+        response = self.generate(messages, **kwargs)
+        yield response.content

@@ -52,7 +52,9 @@ ISOLATION_KEYWORDS = [
 
 def scan(ast: PromptAST) -> SecurityReport:
     """Analyze prompt for security issues."""
-    text = render_generic(ast)
+    from openprompt.core.linter.linter import _full_prompt_text
+
+    text = _full_prompt_text(ast)
     findings: list[SecurityFinding] = []
 
     for pattern, code, severity in INJECTION_PATTERNS:

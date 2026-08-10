@@ -76,7 +76,7 @@ CONTRADICTION_PAIRS = [
 def lint(ast: PromptAST) -> LintReport:
     """Run all linter rules against a PromptAST."""
     issues: list[LintIssue] = []
-    text = render_generic(ast)
+    text = _full_prompt_text(ast)
 
     issues.extend(_check_ambiguity(ast, text))
     issues.extend(_check_output(ast, text))
@@ -91,6 +91,14 @@ def lint(ast: PromptAST) -> LintReport:
     score = _compute_score(categories)
 
     return LintReport(issues=issues, score=score, categories=categories)
+
+
+def _full_prompt_text(ast: PromptAST) -> str:
+    """Rendered text plus raw source when structured parsing dropped lines."""
+    text = render_generic(ast)
+    if ast.raw_text and ast.raw_text.strip() not in text:
+        return f"{text}\n{ast.raw_text}".strip()
+    return text
 
 
 def _check_ambiguity(ast: PromptAST, text: str) -> list[LintIssue]:

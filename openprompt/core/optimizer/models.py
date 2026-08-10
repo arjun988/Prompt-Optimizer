@@ -37,6 +37,7 @@ class OptimizeResult:
     report_lines: list[str] = field(default_factory=list)
     original_cost_usd: float = 0.0
     optimized_cost_usd: float = 0.0
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def cost_delta_pct(self) -> float:

@@ -60,4 +60,4 @@ def _parse_judge_response(content: str) -> tuple[float, str]:
     if match:
         return max(0.0, min(1.0, float(match.group(1)))), content[:200]
 
-    return 0.5, "Could not parse judge response; defaulting to 0.5."
+    return 0.0, "Could not parse judge response; treating as failure (score=0)."

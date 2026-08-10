@@ -25,9 +25,11 @@ from openprompt.core.evaluator.metrics import (
     run_evaluation,
 )
 from openprompt.core.evaluator.regression import check_regression
-from openprompt.core.linter.linter import lint
+from openprompt.core.linter.linter import lint as lint_prompt
+from openprompt.cli.output import emit_json
 from openprompt.core.optimizer.engine import Optimizer
 from openprompt.core.optimizer.multi_model import ModelSpec
+from openprompt.plugins.discovery import discover_evaluators
 from openprompt.core.parser.parser import parse_file
 from openprompt.core.security.scanner import scan
 from openprompt.core.storage.sqlite import RunStore
@@ -57,14 +59,16 @@ def init(
     (root / "tests").mkdir(exist_ok=True)
     (root / "evaluators").mkdir(exist_ok=True)
 
-    sample_prompt = root / "prompts" / "example.txt"
+    task_dir = root / "prompts" / "example"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    sample_prompt = task_dir / "prompt.txt"
     if not sample_prompt.exists():
         sample_prompt.write_text(
             "Summarize the following article in 5-7 bullet points.\n",
             encoding="utf-8",
         )
 
-    sample_tests = root / "tests" / "example_tests.yaml"
+    sample_tests = task_dir / "tests.yaml"
     if not sample_tests.exists():
         sample_tests.write_text(
             yaml.safe_dump(
@@ -85,18 +89,40 @@ def init(
 
     console.print(f"[green]✓[/green] Initialized OpenPrompt project in {root}")
     console.print("  openprompt.yaml")
-    console.print("  prompts/")
-    console.print("  tests/")
+    console.print("  prompts/example/prompt.txt")
+    console.print("  prompts/example/tests.yaml")
     console.print("  evaluators/")
 
 
 @app.command()
 def lint(
     prompt: Path = typer.Argument(..., help="Prompt file (.txt, .yaml, .yml)."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripting/CI."),
 ) -> None:
     """Analyze a prompt for quality issues (offline)."""
     ast = parse_file(prompt)
-    report = lint(ast)
+    report = lint_prompt(ast)
+
+    if json_output:
+        console.print(
+            emit_json(
+                {
+                    "score": report.score,
+                    "heuristic": True,
+                    "categories": report.categories,
+                    "issues": [
+                        {
+                            "code": i.code,
+                            "message": i.message,
+                            "severity": i.severity.value,
+                            "recommendation": i.recommendation,
+                        }
+                        for i in report.issues
+                    ],
+                }
+            )
+        )
+        return
 
     console.print("\n[bold]Prompt Analysis[/bold]")
     console.print("─" * 40)
@@ -136,6 +162,7 @@ def eval_cmd(
     model: Optional[str] = typer.Option(None, "--model", help="Model name."),
     baseline: Optional[str] = typer.Option(None, "--baseline", help="Baseline prompt path for regression."),
     fail_on_regression: bool = typer.Option(False, "--fail-on-regression", help="Exit 1 on regression."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripting/CI."),
 ) -> None:
     """Evaluate a prompt against test cases."""
     config = find_project_config()
@@ -178,9 +205,49 @@ def eval_cmd(
         model_provider,
         judge_provider=judge_provider,
         custom_eval_fn=custom_eval_fn,
+        plugin_evaluators=discover_evaluators(),
         provider_name=config.model.provider,
         model_name=config.model.name,
+        pass_threshold=config.evaluation.pass_threshold,
+        holdout_ratio=config.evaluation.holdout_ratio,
+        min_test_count=config.evaluation.min_test_count,
     )
+
+    if json_output:
+        console.print(
+            emit_json(
+                {
+                    "accuracy": report.accuracy,
+                    "pass_rate": report.pass_rate,
+                    "prompt_tokens": report.prompt_tokens,
+                    "total_cost_usd": report.total_cost_usd,
+                    "total_latency_ms": report.total_latency_ms,
+                    "judge_score": report.judge_score,
+                    "warnings": report.warnings,
+                    "results": [
+                        {
+                            "name": r.test.name,
+                            "passed": r.passed,
+                            "score": r.score,
+                            "message": r.message,
+                        }
+                        for r in report.results
+                    ],
+                }
+            )
+        )
+        if fail_on_regression and baseline:
+            baseline_ast = parse_file(baseline)
+            baseline_report = run_evaluation(
+                baseline_ast,
+                tests,
+                model_provider,
+                pass_threshold=config.evaluation.pass_threshold,
+            )
+            regression = check_regression(baseline_report, report, config.regression)
+            if not regression.passed:
+                raise typer.Exit(1)
+        return
 
     console.print("\n[bold]Evaluation[/bold]")
     console.print("─" * 40)
@@ -206,7 +273,13 @@ def eval_cmd(
             tokens=report.prompt_tokens,
             cost_usd=report.total_cost_usd,
             latency_ms=report.total_latency_ms,
+            prompt_text=render_generic(ast),
         )
+
+    if report.warnings:
+        console.print("\n[yellow]Warnings[/yellow]")
+        for warning in report.warnings:
+            console.print(f"  [yellow]![/yellow] {warning}")
 
     if baseline:
         baseline_ast = parse_file(baseline)
@@ -228,6 +301,7 @@ def optimize(
     model: Optional[str] = typer.Option(None, "--model", help="Model name."),
     tests: Optional[Path] = typer.Option(None, "--tests", help="Path to test suite."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save optimized prompt."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripting/CI."),
 ) -> None:
     """Optimize a prompt using the configured strategy."""
     config = find_project_config()
@@ -246,6 +320,40 @@ def optimize(
 
     console.print("[dim]Analyzing prompt...[/dim]")
     result = optimizer.optimize(prompt, strategy=strategy, tests_path=tests)
+
+    if json_output:
+        console.print(
+            emit_json(
+                {
+                    "prompt": result.prompt,
+                    "original_score": result.original_score,
+                    "optimized_score": result.optimized_score,
+                    "score_delta": result.score_delta,
+                    "original_tokens": result.original_tokens,
+                    "optimized_tokens": result.optimized_tokens,
+                    "token_delta_pct": result.token_delta_pct,
+                    "original_cost_usd": result.original_cost_usd,
+                    "optimized_cost_usd": result.optimized_cost_usd,
+                    "cost_delta_pct": result.cost_delta_pct,
+                    "strategy": result.strategy,
+                    "warnings": result.warnings,
+                    "report_lines": result.report_lines,
+                }
+            )
+        )
+        if output:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if output.suffix in {".yaml", ".yml"}:
+                data = ast_to_yaml_dict(result.optimized)
+                output.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            else:
+                output.write_text(result.prompt, encoding="utf-8")
+        return
+
+    if result.warnings:
+        console.print("\n[yellow]Warnings[/yellow]")
+        for warning in result.warnings:
+            console.print(f"  [yellow]![/yellow] {warning}")
 
     if result.lint_report:
         for issue in result.lint_report.issues:
@@ -302,6 +410,7 @@ def optimize(
             tokens=result.optimized_tokens,
             cost_usd=result.optimized_cost_usd,
             metadata={"original_score": result.original_score, "latency_ms": 0},
+            prompt_text=result.prompt,
         )
 
 
@@ -415,21 +524,43 @@ def compare(
 @app.command()
 def security(
     prompt: Path = typer.Argument(..., help="Prompt file to scan."),
+    fail_on_findings: bool = typer.Option(False, "--fail-on-findings", help="Exit 1 if issues found."),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON for scripting/CI."),
 ) -> None:
     """Scan a prompt for security issues (offline)."""
     ast = parse_file(prompt)
     report = scan(ast)
 
-    console.print("\n[bold]Security Analysis[/bold]")
-    console.print("─" * 40)
-    for finding in report.findings:
-        color = {"critical": "red", "high": "red", "medium": "yellow", "low": "yellow", "info": "green"}.get(
-            finding.severity, "white"
+    if json_output:
+        console.print(
+            emit_json(
+                {
+                    "score": report.score,
+                    "findings": [
+                        {
+                            "severity": f.severity,
+                            "message": f.message,
+                            "recommendation": f.recommendation,
+                        }
+                        for f in report.findings
+                    ],
+                }
+            )
         )
-        console.print(f"[{color}]●[/{color}] [{finding.severity}] {finding.message}")
-        if finding.recommendation:
-            console.print(f"   [dim]→ {finding.recommendation}[/dim]")
-    console.print(f"\n[bold]Security score:[/bold] {report.score}/100")
+    else:
+        console.print("\n[bold]Security Analysis[/bold]")
+        console.print("─" * 40)
+        for finding in report.findings:
+            color = {"critical": "red", "high": "red", "medium": "yellow", "low": "yellow", "info": "green"}.get(
+                finding.severity, "white"
+            )
+            console.print(f"[{color}]●[/{color}] [{finding.severity}] {finding.message}")
+            if finding.recommendation:
+                console.print(f"   [dim]→ {finding.recommendation}[/dim]")
+        console.print(f"\n[bold]Security score:[/bold] {report.score}/100")
+
+    if fail_on_findings and any(f.severity in {"critical", "high", "medium"} for f in report.findings):
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -491,16 +622,21 @@ def template(
 def multi_model_cmd(
     prompt: Path = typer.Argument(..., help="Prompt file to optimize across models."),
     models: list[str] = typer.Option(
-        ["mock:mock-model"],
+        [],
         "--model",
         "-m",
-        help="Provider:model pairs (repeatable). Example: -m ollama:llama3.2 -m mock:mock-model",
+        help="Provider:model pairs (repeatable). Falls back to openprompt.yaml models list.",
     ),
     strategy: Optional[str] = typer.Option(None, "--strategy", "-s"),
     tests: Optional[Path] = typer.Option(None, "--tests", "-t"),
 ) -> None:
     """Optimize the same prompt across multiple provider/model pairs."""
     config = find_project_config()
+    if not models:
+        if config.models:
+            models = [f"{m.provider}:{m.model}" for m in config.models]
+        else:
+            models = ["mock:mock-model"]
     client = OpenPrompt(
         provider=config.model.provider,
         model=config.model.name,
@@ -559,6 +695,7 @@ def serve(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
     reload: bool = typer.Option(False, "--reload"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", help="Require X-API-Key header."),
 ) -> None:
     """Start the OpenPrompt REST API server."""
     try:
@@ -567,11 +704,21 @@ def serve(
         console.print("[red]Install server extras:[/red] pip install 'openprompt[server]'")
         raise typer.Exit(1) from exc
 
+    from openprompt.config.models import ServerConfig
     from openprompt.server.app import create_app
 
-    app = create_app()
+    project = find_project_config()
+    server_cfg = project.server.model_copy(deep=True)
+    if api_key:
+        server_cfg.api_key = api_key
+    server_cfg.host = host
+    server_cfg.port = port
+
+    app = create_app(server_cfg)
     console.print(f"[green]OpenPrompt API[/green] http://{host}:{port}")
     console.print(f"OpenAPI docs: http://{host}:{port}/docs")
+    if server_cfg.api_key:
+        console.print("[yellow]API key auth enabled[/yellow] (X-API-Key header)")
     uvicorn.run(app, host=host, port=port, reload=reload)
 
 

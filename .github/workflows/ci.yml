@@ -20,10 +20,17 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,server]"
 
       - name: Ruff
         run: ruff check openprompt
+
+      - name: Export OpenAPI spec
+        run: python scripts/export_openapi.py
+
+      - name: Verify plugin example entry points
+        run: |
+          python -c "from openprompt.plugins.discovery import discover_strategies, discover_evaluators, discover_mutation_operators; assert 'passthrough_rewrite' in discover_strategies(); assert 'contains' in discover_evaluators(); assert discover_mutation_operators()"
 
       - name: Pytest
         run: pytest

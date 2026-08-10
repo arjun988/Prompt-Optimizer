@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -13,7 +14,10 @@ import yaml
 
 from openprompt.core.ast.models import PromptAST
 from openprompt.core.compiler.renderer import render_generic, render_messages
-from openprompt.providers.base import Message, ModelProvider, create_provider
+from openprompt.core.compiler.tokens import estimate_tokens
+from openprompt.providers.base import Message, ModelProvider
+
+logger = logging.getLogger(__name__)
 
 
 class MetricType(StrEnum):
@@ -54,6 +58,7 @@ class EvalReport:
     total_cost_usd: float = 0.0
     total_latency_ms: float = 0.0
     judge_score: float | None = None
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def accuracy(self) -> float:
@@ -109,9 +114,20 @@ def score_output(
     *,
     judge_provider: ModelProvider | None = None,
     custom_eval_fn: Callable[[str, str | None], float] | None = None,
+    plugin_evaluators: dict[str, Any] | None = None,
 ) -> tuple[float, str]:
     """Score a single model output against a test case."""
     expected = test.expected
+
+    if test.metric == MetricType.CUSTOM or test.evaluator:
+        eval_fn = _resolve_evaluator(test, custom_eval_fn, plugin_evaluators)
+        if eval_fn is None:
+            return 0.0, "Custom evaluator not loaded."
+        try:
+            score = float(eval_fn(output, expected))
+            return max(0.0, min(1.0, score)), "Custom evaluator score."
+        except Exception as exc:
+            return 0.0, f"Custom evaluator error: {exc}"
 
     if test.metric == MetricType.EXACT_MATCH:
         if expected is None:
@@ -138,7 +154,7 @@ def score_output(
         except json.JSONDecodeError:
             return 0.0, "Output is not valid JSON."
         if test.schema:
-            errors = _validate_json_schema(parsed, test.schema)
+            errors = validate_json_schema(parsed, test.schema)
             if errors:
                 return 0.0, "; ".join(errors)
         if expected:
@@ -167,16 +183,19 @@ def score_output(
         score, reason = judge_response(judge_provider, test.input, output, expected, test.metadata)
         return score, reason
 
-    if test.metric == MetricType.CUSTOM:
-        if custom_eval_fn is None:
-            return 0.0, "Custom evaluator not loaded."
-        try:
-            score = float(custom_eval_fn(output, expected))
-            return max(0.0, min(1.0, score)), "Custom evaluator score."
-        except Exception as exc:
-            return 0.0, f"Custom evaluator error: {exc}"
-
     return 0.0, f"Unknown metric: {test.metric}"
+
+
+def validate_json_schema(data: Any, schema: dict[str, Any]) -> list[str]:
+    """Validate JSON data against a schema using jsonschema when available."""
+    try:
+        import jsonschema
+
+        validator = jsonschema.Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+        return [e.message for e in errors]
+    except ImportError:
+        return _validate_json_schema_minimal(data, schema)
 
 
 def run_evaluation(
@@ -186,32 +205,49 @@ def run_evaluation(
     *,
     judge_provider: ModelProvider | None = None,
     custom_eval_fn: Callable[[str, str | None], float] | None = None,
+    plugin_evaluators: dict[str, Any] | None = None,
     provider_name: str = "mock",
     model_name: str | None = None,
+    pass_threshold: float = 0.85,
+    holdout_ratio: float = 0.0,
+    min_test_count: int = 3,
 ) -> EvalReport:
     """Run all test cases against a prompt AST."""
     from openprompt.core.cost.pricing import estimate_cost_usd
 
+    warnings: list[str] = []
+    eval_tests, holdout_tests = _split_holdout(tests, holdout_ratio, min_test_count)
+    if holdout_tests:
+        warnings.append(
+            f"Holdout set: {len(holdout_tests)} test(s) reserved; optimize on {len(eval_tests)} only."
+        )
+    if len(tests) < min_test_count:
+        warnings.append(
+            f"Small test suite ({len(tests)} tests). Scores may overfit; add ≥{min_test_count} tests."
+        )
+
     prompt_text = render_generic(ast)
-    prompt_tokens = max(1, len(prompt_text) // 4)
+    prompt_tokens = estimate_tokens(prompt_text, model=model_name)
     results: list[TestResult] = []
     total_cost = 0.0
     total_latency = 0.0
     judge_scores: list[float] = []
 
-    for test in tests:
-        messages = render_messages(ast)
+    provider_format = _map_provider_format(provider_name)
+
+    for test in eval_tests:
+        messages = render_messages(ast, provider=provider_format)
         user_suffix = f"\n\n---\nInput:\n{test.input}"
         if messages:
             last = messages[-1]
             messages = [*messages[:-1], Message(role=last.role, content=last.content + user_suffix)]
         else:
-            from openprompt.providers.base import Message
-
             messages = [Message(role="user", content=user_suffix.strip())]
 
         response = provider.generate(messages)
-        total_cost += estimate_cost_usd(response, provider=provider_name, model=model_name or getattr(provider, "model", None))
+        total_cost += estimate_cost_usd(
+            response, provider=provider_name, model=model_name or getattr(provider, "model", None)
+        )
         total_latency += response.latency_ms
 
         score, message = score_output(
@@ -219,18 +255,40 @@ def run_evaluation(
             test,
             judge_provider=judge_provider,
             custom_eval_fn=custom_eval_fn,
+            plugin_evaluators=plugin_evaluators,
         )
         if test.metric == MetricType.LLM_JUDGE:
             judge_scores.append(score)
         results.append(
             TestResult(
                 test=test,
-                passed=score >= 0.999,
+                passed=score >= pass_threshold,
                 score=score,
                 output=response.content,
                 message=message,
             )
         )
+
+    if holdout_tests:
+        holdout_report = run_evaluation(
+            ast,
+            holdout_tests,
+            provider,
+            judge_provider=judge_provider,
+            custom_eval_fn=custom_eval_fn,
+            plugin_evaluators=plugin_evaluators,
+            provider_name=provider_name,
+            model_name=model_name,
+            pass_threshold=pass_threshold,
+            holdout_ratio=0.0,
+            min_test_count=0,
+        )
+        train_pass = sum(1 for r in results if r.passed) / max(1, len(results))
+        holdout_pass = holdout_report.pass_rate
+        if train_pass >= pass_threshold and holdout_pass < pass_threshold:
+            warnings.append(
+                f"Possible overfit: train pass {train_pass:.1%} but holdout pass {holdout_pass:.1%}."
+            )
 
     return EvalReport(
         results=results,
@@ -238,7 +296,45 @@ def run_evaluation(
         total_cost_usd=total_cost,
         total_latency_ms=total_latency,
         judge_score=(sum(judge_scores) / len(judge_scores)) if judge_scores else None,
+        warnings=warnings,
     )
+
+
+def _split_holdout(
+    tests: list[TestCase],
+    holdout_ratio: float,
+    min_test_count: int,
+) -> tuple[list[TestCase], list[TestCase]]:
+    if holdout_ratio <= 0 or len(tests) < max(min_test_count, 2):
+        return tests, []
+    holdout_count = max(1, int(len(tests) * holdout_ratio))
+    if holdout_count >= len(tests):
+        holdout_count = max(1, len(tests) // 4)
+    split = len(tests) - holdout_count
+    return tests[:split], tests[split:]
+
+
+def _resolve_evaluator(
+    test: TestCase,
+    custom_eval_fn: Callable[[str, str | None], float] | None,
+    plugin_evaluators: dict[str, Any] | None,
+) -> Callable[[str, str | None], float] | None:
+    if test.evaluator and plugin_evaluators and test.evaluator in plugin_evaluators:
+        fn = plugin_evaluators[test.evaluator]
+        return fn if callable(fn) else None
+    if test.metric == MetricType.CUSTOM:
+        return custom_eval_fn
+    return custom_eval_fn
+
+
+def _map_provider_format(provider: str) -> str:
+    if provider in {"openai", "grok", "ollama", "mock", "openrouter"}:
+        return "openai"
+    if provider == "anthropic":
+        return "anthropic"
+    if provider == "gemini":
+        return "gemini"
+    return "generic"
 
 
 def resolve_prompt_in_directory(directory: Path) -> Path | None:
@@ -274,8 +370,8 @@ def resolve_test_suite(prompt_path: Path) -> Path | None:
     return None
 
 
-def _validate_json_schema(data: Any, schema: dict[str, Any]) -> list[str]:
-    """Minimal JSON schema validation without jsonschema dependency."""
+def _validate_json_schema_minimal(data: Any, schema: dict[str, Any]) -> list[str]:
+    """Minimal JSON schema validation when jsonschema is not installed."""
     errors: list[str] = []
     expected_type = schema.get("type")
     if expected_type == "object" and not isinstance(data, dict):

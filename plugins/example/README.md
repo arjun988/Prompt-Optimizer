@@ -1,28 +1,28 @@
 # OpenPrompt Plugin Example
 
-Copy this folder into your own repository or install locally:
+This directory demonstrates how to publish OpenPrompt plugins as a **standalone package**.
+
+## Install locally
 
 ```bash
-cd plugins/example
-pip install -e .
+pip install -e ./plugins/example
+pip install -e ..  # OpenPrompt core
 ```
 
-Then verify the operator is discovered:
+## Entry points
 
-```python
-from openprompt.plugins.discovery import discover_mutation_operators
-assert any(op.name == "uppercase_headers" for op in discover_mutation_operators())
+The example registers:
+
+- `openprompt.operators` — custom mutation operator
+- `openprompt.evaluators` — custom evaluator (`contains`)
+- `openprompt.strategies` — custom strategy (`passthrough_rewrite`)
+
+Verify discovery:
+
+```bash
+python -c "from openprompt.plugins.discovery import discover_strategies; print(discover_strategies().keys())"
 ```
 
-Register operators, evaluators, or strategies via `pyproject.toml`:
+## Publish
 
-```toml
-[project.entry-points."openprompt.operators"]
-my_op = "my_package.operators:MyOperator"
-
-[project.entry-points."openprompt.evaluators"]
-my_eval = "my_package.evaluators:evaluate"
-
-[project.entry-points."openprompt.strategies"]
-my_strategy = "my_package.strategies:MyStrategy"
-```
+Copy this folder to its own repository, add `pyproject.toml` with `[project.entry-points]`, and publish to PyPI.

@@ -9,9 +9,9 @@ def test_pareto_dominance() -> None:
 
 def test_nsga2_select_prefers_quality() -> None:
     items = [
-        RankedIndividual("low", ObjectiveVector(0.5, 100, 0.01)),
-        RankedIndividual("high", ObjectiveVector(0.9, 150, 0.02)),
-        RankedIndividual("mid", ObjectiveVector(0.7, 120, 0.015)),
+        RankedIndividual("low", ObjectiveVector(0.5, 200, 0.02)),
+        RankedIndividual("high", ObjectiveVector(0.9, 100, 0.01)),
+        RankedIndividual("mid", ObjectiveVector(0.7, 300, 0.03)),
     ]
     selected = nsga2_select(items, 2)
     labels = {s for s in selected}

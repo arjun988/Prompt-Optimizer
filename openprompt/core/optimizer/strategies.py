@@ -28,7 +28,7 @@ class StrategyContext:
     judge_provider: ModelProvider | None = None
     tests: list[TestCase] | None = None
     config: ProjectConfig | None = None
-    custom_eval_fn=None
+    custom_eval_fn: Callable[[str, str | None], float] | None = None
 
 
 @dataclass
@@ -100,14 +100,21 @@ def _evaluate_ast(ast: PromptAST, ctx: StrategyContext) -> EvalMetrics:
         composite = _objective_score(quality, tokens, cost, objectives)
         return EvalMetrics(composite, quality, tokens, cost, 0.0, None)
 
+    eval_cfg = ctx.config.evaluation if ctx.config else None
+    from openprompt.plugins.discovery import discover_evaluators
+
     eval_report = run_evaluation(
         ast,
         ctx.tests,
         ctx.provider,
         judge_provider=ctx.judge_provider,
         custom_eval_fn=ctx.custom_eval_fn,
+        plugin_evaluators=discover_evaluators(),
         provider_name=provider_name,
         model_name=model_name,
+        pass_threshold=eval_cfg.pass_threshold if eval_cfg else 0.85,
+        holdout_ratio=eval_cfg.holdout_ratio if eval_cfg else 0.0,
+        min_test_count=eval_cfg.min_test_count if eval_cfg else 3,
     )
     cost = eval_report.total_cost_usd or estimate_tokens_cost_usd(
         tokens, sum(len(r.output) // 4 for r in eval_report.results),
@@ -155,6 +162,11 @@ def _nsga_select(pool: list[CandidateResult], k: int) -> list[CandidateResult]:
     return selected
 
 
+def run_rewrite_strategy(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
+    """Public entry point for the rewrite strategy (used by plugins)."""
+    return _strategy_rewrite(ast, ctx)
+
+
 def _strategy_rewrite(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
     lint_report = lint(ast)
     orig = _evaluate_ast(ast, ctx)
@@ -175,6 +187,7 @@ def _strategy_rewrite(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
         lint_report=lint_report,
         failure_analyses=failures,
         report_lines=["Single-pass linter-guided rewrite.", f"Linter score: {lint_report.score}/100"],
+        warnings=_heuristic_warnings(ctx),
     )
 
 
@@ -240,6 +253,7 @@ def _strategy_evolutionary(ast: PromptAST, ctx: StrategyContext) -> OptimizeResu
             break
 
         parents = _nsga_select(pool, k=max(2, population_size // 2))
+        max_ops = config.max_operators_per_parent if config else len(operators)
 
         # Crossover between top Pareto parents
         if len(parents) >= 2 and eval_calls < budget:
@@ -251,7 +265,7 @@ def _strategy_evolutionary(ast: PromptAST, ctx: StrategyContext) -> OptimizeResu
         for parent in parents:
             if eval_calls >= budget:
                 break
-            for op in operators:
+            for op in operators[:max_ops]:
                 if eval_calls >= budget:
                     break
                 child_ast = op.mutate(parent.ast, OptimizeContext(lint_report=lint(parent.ast)))
@@ -399,6 +413,9 @@ def _strategy_hybrid(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
 def _strategy_compress(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
     from openprompt.strategies.mutations.compression import CompressionMutation
 
+    config = ctx.config.optimizer if ctx.config else None
+    min_ratio = config.compress_min_quality_ratio if config else 0.98
+
     original = _evaluate_ast(ast, ctx)
     current = ast.clone()
     best = current
@@ -407,10 +424,11 @@ def _strategy_compress(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
     for _ in range(5):
         current = CompressionMutation().mutate(current, OptimizeContext(prefer_compression=True))
         metrics = _evaluate_ast(current, ctx)
-        if metrics.quality_score >= original.quality_score * 0.98:
+        if metrics.quality_score >= original.quality_score * min_ratio:
             best = current
             best_metrics = metrics
 
+    pct = int(min_ratio * 100)
     return OptimizeResult(
         original=ast,
         optimized=best,
@@ -421,8 +439,23 @@ def _strategy_compress(ast: PromptAST, ctx: StrategyContext) -> OptimizeResult:
         original_cost_usd=original.cost_usd,
         optimized_cost_usd=best_metrics.cost_usd,
         strategy="compress",
-        report_lines=["Token compression while preserving ≥98% quality."],
+        report_lines=[f"Token compression while preserving ≥{pct}% quality."],
+        warnings=_heuristic_warnings(ctx),
     )
+
+
+def _heuristic_warnings(ctx: StrategyContext) -> list[str]:
+    warnings: list[str] = []
+    if not ctx.tests:
+        require = ctx.config.optimizer.require_tests_for_claims if ctx.config else True
+        if require:
+            warnings.append(
+                "No test suite — scores are linter/security heuristics only, not measured task performance."
+            )
+    provider_name = _provider_name(ctx)
+    if provider_name == "mock":
+        warnings.append("Mock provider — outputs and improvements are not from a live model.")
+    return warnings
 
 
 def _build_critique(lint_report) -> str:

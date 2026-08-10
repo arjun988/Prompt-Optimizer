@@ -18,7 +18,6 @@ from openprompt.core.evaluator.metrics import (
 )
 from openprompt.core.linter.linter import LintReport, lint
 from openprompt.core.optimizer.cost_optimizer import CostRecommendation, recommend_cost_quality
-from openprompt.core.optimizer.engine import Optimizer
 from openprompt.core.optimizer.models import OptimizeResult
 from openprompt.core.optimizer.multi_model import (
     ModelSpec,
@@ -50,25 +49,17 @@ class OpenPrompt:
     config: ProjectConfig | None = None
     api_key: str | None = None
     base_url: str | None = None
+    warn_mock: bool = True
 
     def __post_init__(self) -> None:
-        if self.config is None:
-            self.config = find_project_config()
-        self.config.model.provider = self.provider
-        self.config.model.name = self.model
+        base = self.config.model_copy_deep() if self.config else find_project_config().model_copy_deep()
+        base.model.provider = self.provider
+        base.model.name = self.model
         if self.api_key:
-            self.config.model.api_key = self.api_key
+            base.model.api_key = self.api_key
         if self.base_url:
-            self.config.model.base_url = self.base_url
-
-    def _optimizer(self) -> Optimizer:
-        return Optimizer(
-            provider=self.provider,
-            model=self.model,
-            config=self.config,
-            api_key=self.api_key,
-            base_url=self.base_url,
-        )
+            base.model.base_url = self.base_url
+        self.config = base
 
     def _resolve_ast(self, prompt: str | Path):
         if isinstance(prompt, Path) or (isinstance(prompt, str) and Path(prompt).exists()):
@@ -99,13 +90,79 @@ class OpenPrompt:
         constraints: dict[str, Any] | None = None,
     ) -> OptimizeResult:
         """Optimize a prompt."""
-        return self._optimizer().optimize(
+        cfg = self.config.model_copy_deep()
+        if objective == "maximize_accuracy":
+            cfg.objectives.quality_weight = 1.5
+        if constraints:
+            if "max_tokens" in constraints:
+                cfg.objectives.token_weight = 0.5
+        return self._run_optimize(
             prompt,
             strategy=strategy,
             tests_path=tests_path,
-            objective=objective,
-            constraints=constraints,
+            config=cfg,
         )
+
+    def _run_optimize(
+        self,
+        prompt: str | Path,
+        *,
+        strategy: str | None,
+        tests_path: str | Path | None,
+        config: ProjectConfig,
+    ) -> OptimizeResult:
+        from openprompt.core.evaluator.custom import load_custom_evaluator
+        from openprompt.core.evaluator.metrics import load_test_suite, resolve_prompt_in_directory, resolve_test_suite
+        from openprompt.core.optimizer.strategies import StrategyContext, run_strategy
+        from openprompt.core.parser.parser import parse_any, parse_file
+        from openprompt.providers.base import create_provider
+
+        if isinstance(prompt, Path) or (isinstance(prompt, str) and Path(prompt).exists()):
+            path = Path(prompt)
+            if path.is_dir():
+                prompt_file = resolve_prompt_in_directory(path)
+                if not prompt_file:
+                    raise FileNotFoundError(f"No prompt in directory: {path}")
+                ast = parse_file(prompt_file)
+            else:
+                ast = parse_file(path)
+        else:
+            ast = parse_any(str(prompt))
+
+        tests = None
+        if tests_path:
+            tests = load_test_suite(tests_path)
+        elif isinstance(prompt, (str, Path)) and Path(prompt).exists():
+            path = Path(prompt)
+            resolved = resolve_test_suite(path if path.is_dir() else path)
+            if resolved:
+                tests = load_test_suite(resolved)
+
+        custom_eval_fn = None
+        if config.evaluation.custom_evaluator:
+            custom_eval_fn = load_custom_evaluator(config.evaluation.custom_evaluator)
+
+        provider = create_provider(
+            config.model.provider,
+            config.model.name,
+            api_key=self.api_key or config.model.api_key,
+            base_url=self.base_url or config.model.base_url,
+            warn_mock=self.warn_mock,
+        )
+        judge_provider = None
+        if config.evaluation.judge:
+            j = config.evaluation.judge
+            judge_provider = create_provider(j.provider, j.model, warn_mock=False)
+
+        strategy_name = strategy or config.optimizer.strategy
+        ctx = StrategyContext(
+            provider=provider,
+            judge_provider=judge_provider,
+            tests=tests,
+            config=config,
+            custom_eval_fn=custom_eval_fn,
+        )
+        return run_strategy(ast, strategy_name, ctx)
 
     def compress(self, prompt: str | Path, *, tests_path: str | Path | None = None) -> OptimizeResult:
         """Compress prompt tokens while preserving quality."""
@@ -119,29 +176,38 @@ class OpenPrompt:
         """Run evaluation test suite against a prompt."""
         ast = self._resolve_ast(prompt)
         suite = self._resolve_tests(prompt, tests)
-        provider = create_provider(self.provider, self.model, api_key=self.api_key, base_url=self.base_url)
+        provider = create_provider(
+            self.provider,
+            self.model,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            warn_mock=self.warn_mock,
+        )
 
         judge_provider = None
         if self.config and self.config.evaluation.judge:
             j = self.config.evaluation.judge
-            judge_provider = create_provider(j.provider, j.model)
+            judge_provider = create_provider(j.provider, j.model, warn_mock=False)
 
         custom_eval_fn = None
         if self.config and self.config.evaluation.custom_evaluator:
             custom_eval_fn = load_custom_evaluator(self.config.evaluation.custom_evaluator)
 
         plugin_evaluators = discover_evaluators()
-        if not custom_eval_fn and tests and isinstance(tests, str) and tests in plugin_evaluators:
-            custom_eval_fn = plugin_evaluators[tests]
 
+        eval_cfg = self.config.evaluation if self.config else None
         return run_evaluation(
             ast,
             suite,
             provider,
             judge_provider=judge_provider,
             custom_eval_fn=custom_eval_fn,
+            plugin_evaluators=plugin_evaluators,
             provider_name=self.provider,
             model_name=self.model,
+            pass_threshold=eval_cfg.pass_threshold if eval_cfg else 0.85,
+            holdout_ratio=eval_cfg.holdout_ratio if eval_cfg else 0.0,
+            min_test_count=eval_cfg.min_test_count if eval_cfg else 3,
         )
 
     def benchmark(

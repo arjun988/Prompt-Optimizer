@@ -152,6 +152,8 @@ def recommend_from_candidates(
     min_quality: float | None = None,
 ) -> CostRecommendation:
     """Recommend from a raw candidate list."""
+    if not candidates:
+        raise ValueError("No candidates provided for cost recommendation.")
     fake = OptimizeResult(
         original= candidates[0].ast,
         optimized=candidates[0].ast,

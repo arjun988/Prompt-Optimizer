@@ -21,6 +21,12 @@ ENTRY_GROUP_STRATEGIES = "openprompt.strategies"
 
 StrategyRunner = Callable[["PromptAST", "StrategyContext"], "OptimizeResult"]
 
+_CACHE: dict[str, object] = {}
+
+
+def clear_plugin_cache() -> None:
+    _CACHE.clear()
+
 
 def _entry_points(group: str):
     try:
@@ -35,6 +41,12 @@ def _entry_points(group: str):
 
 def discover_mutation_operators() -> list[MutationOperator]:
     """Load built-in and entry-point registered mutation operators."""
+    if "operators" not in _CACHE:
+        _CACHE["operators"] = _load_mutation_operators()
+    return _CACHE["operators"]  # type: ignore[return-value]
+
+
+def _load_mutation_operators() -> list[MutationOperator]:
     from openprompt.strategies.mutations.base import builtin_operators
 
     operators: list[MutationOperator] = builtin_operators()
@@ -58,6 +70,12 @@ def discover_mutation_operators() -> list[MutationOperator]:
 
 def discover_evaluators() -> dict[str, Any]:
     """Load entry-point registered evaluators (callable or Evaluator class)."""
+    if "evaluators" not in _CACHE:
+        _CACHE["evaluators"] = _load_evaluators()
+    return _CACHE["evaluators"]  # type: ignore[return-value]
+
+
+def _load_evaluators() -> dict[str, Any]:
     discovered: dict[str, Any] = {}
 
     for entry in _entry_points(ENTRY_GROUP_EVALUATORS):
@@ -80,6 +98,12 @@ def discover_strategies() -> dict[str, StrategyRunner]:
     Plugins register callables: ``(ast, ctx) -> OptimizeResult``
     or classes with a ``run(ast, ctx)`` method.
     """
+    if "strategies" not in _CACHE:
+        _CACHE["strategies"] = _load_strategies()
+    return _CACHE["strategies"]  # type: ignore[return-value]
+
+
+def _load_strategies() -> dict[str, StrategyRunner]:
     from openprompt.core.optimizer.strategies import builtin_strategy_runners
 
     strategies: dict[str, StrategyRunner] = dict(builtin_strategy_runners())

@@ -20,13 +20,21 @@ jobs:
           python-version: "3.12"
 
       - name: Install OpenPrompt
-        run: pip install -e .
+        run: pip install -e ".[dev]"
 
       - name: Lint prompts (offline)
         run: |
           if [ -d prompts ]; then
             for f in prompts/*.{txt,yaml,yml}; do
               [ -f "$f" ] && openprompt lint "$f"
+            done
+          fi
+
+      - name: Security scan (hard gate)
+        run: |
+          if [ -d prompts ]; then
+            for f in prompts/*.{txt,yaml,yml}; do
+              [ -f "$f" ] && openprompt security "$f" --fail-on-findings
             done
           fi
 
@@ -37,17 +45,9 @@ jobs:
               [ -f "$f" ] || continue
               name=$(basename "$f" | sed 's/\.[^.]*$//')
               if [ -f "tests/${name}_tests.yaml" ]; then
-                openprompt eval "$f" --tests "tests/${name}_tests.yaml" --fail-on-regression || true
+                openprompt eval "$f" --tests "tests/${name}_tests.yaml" --fail-on-regression
               fi
             done
           else
             openprompt eval examples/summarize
-          fi
-
-      - name: Security scan
-        run: |
-          if [ -d prompts ]; then
-            for f in prompts/*.{txt,yaml,yml}; do
-              [ -f "$f" ] && openprompt security "$f"
-            done
           fi

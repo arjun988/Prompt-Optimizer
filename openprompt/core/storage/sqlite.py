@@ -20,6 +20,8 @@ class RunRecord:
     cost_usd: float
     latency_ms: float
     created_at: str
+    prompt_text: str | None = None
+    output_text: str | None = None
 
 
 class RunStore:
@@ -49,11 +51,22 @@ class RunStore:
                     cost_usd REAL DEFAULT 0,
                     latency_ms REAL DEFAULT 0,
                     metadata TEXT DEFAULT '{}',
+                    prompt_text TEXT,
+                    output_text TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
             )
+            self._ensure_columns(conn)
             conn.commit()
+
+    def _ensure_columns(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(runs)").fetchall()
+        names = {row[1] for row in rows}
+        if "prompt_text" not in names:
+            conn.execute("ALTER TABLE runs ADD COLUMN prompt_text TEXT")
+        if "output_text" not in names:
+            conn.execute("ALTER TABLE runs ADD COLUMN output_text TEXT")
 
     def log_run(
         self,
@@ -66,13 +79,18 @@ class RunStore:
         cost_usd: float = 0.0,
         latency_ms: float = 0.0,
         metadata: dict | None = None,
+        prompt_text: str | None = None,
+        output_text: str | None = None,
     ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO runs (prompt_name, strategy, model, score, tokens, cost_usd, latency_ms, metadata, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO runs (
+                    prompt_name, strategy, model, score, tokens, cost_usd, latency_ms,
+                    metadata, prompt_text, output_text, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     prompt_name,
@@ -83,6 +101,8 @@ class RunStore:
                     cost_usd,
                     latency_ms,
                     json.dumps(metadata or {}),
+                    prompt_text,
+                    output_text,
                     created_at,
                 ),
             )
@@ -105,9 +125,18 @@ class RunStore:
                 cost_usd=row["cost_usd"],
                 latency_ms=row["latency_ms"],
                 created_at=row["created_at"],
+                prompt_text=row["prompt_text"] if "prompt_text" in row.keys() else None,
+                output_text=row["output_text"] if "output_text" in row.keys() else None,
             )
             for row in rows
         ]
+
+    def export_json(self, limit: int = 100) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def average_score(self, prompt_name: str) -> float | None:
         with self._connect() as conn:

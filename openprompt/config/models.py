@@ -19,12 +19,21 @@ class ModelConfig(BaseModel):
     max_tokens: int = 4096
 
 
+class MultiModelEntry(BaseModel):
+    provider: str
+    model: str
+
+
 class OptimizerConfig(BaseModel):
     strategy: Literal["rewrite", "iterative", "evolutionary", "hybrid", "compress"] = "hybrid"
     max_iterations: int = 5
     candidates_per_gen: int = 8
     eval_budget: int = 100
     seed: int | None = None
+    compress_min_quality_ratio: float = 0.98
+    require_tests_for_claims: bool = True
+    max_operators_per_parent: int = 3
+    parallel_workers: int = 4
 
 
 class JudgeConfig(BaseModel):
@@ -37,6 +46,32 @@ class EvaluationConfig(BaseModel):
     metrics: list[str] = Field(default_factory=lambda: ["exact_match"])
     judge: JudgeConfig | None = None
     custom_evaluator: str | None = None
+    pass_threshold: float = 0.85
+    min_test_count: int = 3
+    holdout_ratio: float = 0.0
+
+
+class ServerConfig(BaseModel):
+    api_key: str | None = None
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"])
+    rate_limit_per_minute: int = 120
+    host: str = "127.0.0.1"
+    port: int = 8000
+    public_paths: list[str] = Field(default_factory=lambda: ["/health", "/docs", "/openapi.json", "/redoc"])
+
+    @property
+    def public_paths_set(self) -> set[str]:
+        return set(self.public_paths)
+
+    @classmethod
+    def from_env(cls) -> ServerConfig:
+        import os
+
+        api_key = os.environ.get("OPENPROMPT_API_KEY") or os.environ.get("OPENPROMPT_SERVER_API_KEY")
+        cors = os.environ.get("OPENPROMPT_CORS_ORIGINS")
+        origins = [o.strip() for o in cors.split(",")] if cors else ["http://localhost:3000", "http://127.0.0.1:3000"]
+        rate = int(os.environ.get("OPENPROMPT_RATE_LIMIT", "120"))
+        return cls(api_key=api_key, cors_origins=origins, rate_limit_per_minute=rate)
 
 
 class ObjectivesConfig(BaseModel):
@@ -60,11 +95,16 @@ class RegressionConfig(BaseModel):
 class ProjectConfig(BaseModel):
     project: str = "my-project"
     model: ModelConfig = Field(default_factory=ModelConfig)
+    models: list[MultiModelEntry] = Field(default_factory=list)
     optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     objectives: ObjectivesConfig = Field(default_factory=ObjectivesConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     regression: RegressionConfig = Field(default_factory=RegressionConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
+
+    def model_copy_deep(self) -> ProjectConfig:
+        return self.model_copy(deep=True)
 
     @classmethod
     def load(cls, path: Path | str) -> ProjectConfig:

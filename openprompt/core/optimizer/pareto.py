@@ -60,7 +60,7 @@ def fast_non_dominated_sort(individuals: Sequence[RankedIndividual[T]]) -> list[
     while fronts[front_index]:
         next_front: list[RankedIndividual[T]] = []
         for p in fronts[front_index]:
-            p_index = individuals.index(p)
+            p_index = next(i for i, ind in enumerate(individuals) if ind is p)
             for q_index in dominated_by[p_index]:
                 domination_count[q_index] -= 1
                 if domination_count[q_index] == 0:
