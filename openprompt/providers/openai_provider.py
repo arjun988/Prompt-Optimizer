@@ -6,7 +6,7 @@ import os
 import time
 from typing import Any
 
-from openprompt.providers.base import Message, ModelResponse
+from openprompt.providers.base import Message, ModelResponse, format_openai_content
 
 
 class OpenAIProvider:
@@ -38,7 +38,9 @@ class OpenAIProvider:
         start = time.perf_counter()
         response = client.chat.completions.create(
             model=self.model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+            messages=[
+                {"role": m.role, "content": format_openai_content(m)} for m in messages
+            ],
             temperature=kwargs.get("temperature", 0.7),
             max_tokens=kwargs.get("max_tokens", 4096),
         )
@@ -68,7 +70,9 @@ class OpenAIProvider:
 
         stream = client.chat.completions.create(
             model=self.model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+            messages=[
+                {"role": m.role, "content": format_openai_content(m)} for m in messages
+            ],
             temperature=kwargs.get("temperature", 0.7),
             max_tokens=kwargs.get("max_tokens", 4096),
             stream=True,

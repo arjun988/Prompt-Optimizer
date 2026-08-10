@@ -87,12 +87,31 @@ def _to_gemini_contents(messages: list[Message]) -> tuple[str | None, list]:
             continue
 
         role = "model" if message.role == "assistant" else "user"
-        contents.append(
-            types.Content(
-                role=role,
-                parts=[types.Part(text=message.content)],
-            )
-        )
+        parts: list = []
+        if message.content.strip():
+            parts.append(types.Part(text=message.content))
+        for media in message.media:
+            if media.base64_data:
+                import base64
+
+                raw = base64.standard_b64decode(media.base64_data)
+                parts.append(
+                    types.Part(
+                        inline_data=types.Blob(mime_type=media.mime_type, data=raw),
+                    )
+                )
+            elif media.path:
+                from pathlib import Path
+
+                raw = Path(media.path).read_bytes()
+                parts.append(
+                    types.Part(
+                        inline_data=types.Blob(mime_type=media.mime_type, data=raw),
+                    )
+                )
+        if not parts:
+            parts = [types.Part(text="")]
+        contents.append(types.Content(role=role, parts=parts))
 
     system_instruction = "\n\n".join(system_parts) if system_parts else None
 

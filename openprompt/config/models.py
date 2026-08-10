@@ -24,8 +24,26 @@ class MultiModelEntry(BaseModel):
     model: str
 
 
+class MetaModelConfig(BaseModel):
+    """Cheap model that proposes prompt mutations (GRPO proposer)."""
+
+    provider: str = "mock"
+    model: str = "mock-model"
+
+
 class OptimizerConfig(BaseModel):
-    strategy: Literal["rewrite", "iterative", "evolutionary", "hybrid", "compress"] = "hybrid"
+    strategy: Literal[
+        "rewrite",
+        "iterative",
+        "evolutionary",
+        "hybrid",
+        "compress",
+        "rag",
+        "agent",
+        "grpo",
+        "few_shot",
+        "extraction",
+    ] = "hybrid"
     max_iterations: int = 5
     candidates_per_gen: int = 8
     eval_budget: int = 100
@@ -34,6 +52,9 @@ class OptimizerConfig(BaseModel):
     require_tests_for_claims: bool = True
     max_operators_per_parent: int = 3
     parallel_workers: int = 4
+    few_shot_count: int = 3
+    grpo_proposals: int = 4
+    auto_tune: bool = False
 
 
 class JudgeConfig(BaseModel):
@@ -49,6 +70,8 @@ class EvaluationConfig(BaseModel):
     pass_threshold: float = 0.85
     min_test_count: int = 3
     holdout_ratio: float = 0.0
+    example_pool_path: str | None = None
+    dataset_path: str | None = None
 
 
 class ServerConfig(BaseModel):
@@ -96,6 +119,7 @@ class ProjectConfig(BaseModel):
     project: str = "my-project"
     model: ModelConfig = Field(default_factory=ModelConfig)
     models: list[MultiModelEntry] = Field(default_factory=list)
+    meta_model: MetaModelConfig | None = None
     optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
     objectives: ObjectivesConfig = Field(default_factory=ObjectivesConfig)

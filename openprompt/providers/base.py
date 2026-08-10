@@ -10,9 +10,21 @@ from openprompt.providers.credentials import resolve_api_key, resolve_base_url
 
 
 @dataclass
+class MediaPart:
+    """Image or PDF attachment for vision models."""
+
+    path: str | None = None
+    url: str | None = None
+    mime_type: str = "image/png"
+    base64_data: str | None = None
+    media_type: Literal["image", "pdf"] = "image"
+
+
+@dataclass
 class Message:
     role: Literal["system", "user", "assistant"]
     content: str
+    media: list[MediaPart] = field(default_factory=list)
 
 
 @dataclass
@@ -30,6 +42,32 @@ class ModelResponse:
 
     def estimated_cost_usd(self, input_price_per_m: float = 2.5, output_price_per_m: float = 10.0) -> float:
         return (self.input_tokens * input_price_per_m + self.output_tokens * output_price_per_m) / 1_000_000
+
+
+def format_openai_content(message: Message) -> str | list[dict[str, Any]]:
+    """Build OpenAI chat content (string or multimodal parts)."""
+    if not message.media:
+        return message.content
+    parts: list[dict[str, Any]] = []
+    if message.content.strip():
+        parts.append({"type": "text", "text": message.content})
+    for item in message.media:
+        if item.base64_data:
+            url = f"data:{item.mime_type};base64,{item.base64_data}"
+        elif item.url:
+            url = item.url
+        elif item.path:
+            from openprompt.core.media.loader import media_to_base64
+            from openprompt.core.ast.models import MediaAttachment
+
+            b64, mime = media_to_base64(
+                MediaAttachment(path=item.path, mime_type=item.mime_type, media_type=item.media_type)
+            )
+            url = f"data:{mime};base64,{b64}"
+        else:
+            continue
+        parts.append({"type": "image_url", "image_url": {"url": url}})
+    return parts if parts else message.content
 
 
 class ModelProvider(Protocol):

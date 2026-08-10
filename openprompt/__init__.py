@@ -6,7 +6,7 @@ from openprompt.core.optimizer.models import OptimizeResult
 from openprompt.core.optimizer.multi_model import ModelSpec, MultiModelOptimizeResult
 from openprompt.sdk.client import OpenPrompt
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "CostQualityPoint",
     "CostRecommendation",

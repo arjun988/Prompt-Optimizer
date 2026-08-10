@@ -51,12 +51,22 @@ def run_strategy(ast: PromptAST, strategy: str, ctx: StrategyContext) -> Optimiz
 
 def builtin_strategy_runners() -> dict[str, Callable[[PromptAST, StrategyContext], OptimizeResult]]:
     """Built-in optimization strategies."""
+    from openprompt.core.optimizer.agent_strategy import strategy_agent
+    from openprompt.core.optimizer.extraction_strategy import strategy_extraction, strategy_few_shot
+    from openprompt.core.optimizer.grpo import strategy_grpo
+    from openprompt.core.optimizer.rag_strategy import strategy_rag
+
     return {
         "rewrite": _strategy_rewrite,
         "iterative": _strategy_iterative,
         "evolutionary": _strategy_evolutionary,
         "hybrid": _strategy_hybrid,
         "compress": _strategy_compress,
+        "rag": strategy_rag,
+        "agent": strategy_agent,
+        "grpo": strategy_grpo,
+        "few_shot": strategy_few_shot,
+        "extraction": strategy_extraction,
     }
 
 

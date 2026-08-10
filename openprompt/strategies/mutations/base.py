@@ -33,6 +33,8 @@ def builtin_operators() -> list[MutationOperator]:
     from openprompt.strategies.mutations.reasoning import ReasoningMutation
     from openprompt.strategies.mutations.role import RoleMutation
     from openprompt.strategies.mutations.security import SecurityMutation
+    from openprompt.strategies.mutations.agent import AgentMutation
+    from openprompt.strategies.mutations.rag import RAGMutation
     from openprompt.strategies.mutations.structure import StructureMutation
 
     return [
@@ -45,6 +47,8 @@ def builtin_operators() -> list[MutationOperator]:
         CompressionMutation(),
         SecurityMutation(),
         ReasoningMutation(),
+        RAGMutation(),
+        AgentMutation(),
     ]
 
 

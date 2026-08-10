@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from openprompt.config.models import ProjectConfig, find_project_config
+from openprompt.core.ast.models import PromptAST
 from openprompt.core.benchmark.runner import BenchmarkReport, benchmark_paths
 from openprompt.core.evaluator.custom import load_custom_evaluator
 from openprompt.core.evaluator.metrics import (
@@ -82,7 +83,7 @@ class OpenPrompt:
 
     def optimize(
         self,
-        prompt: str | Path,
+        prompt: str | Path | PromptAST,
         *,
         strategy: str | None = None,
         tests_path: str | Path | None = None,
@@ -91,6 +92,10 @@ class OpenPrompt:
     ) -> OptimizeResult:
         """Optimize a prompt."""
         cfg = self.config.model_copy_deep()
+        if cfg.optimizer.auto_tune:
+            from openprompt.core.optimizer.bayesian import suggest_optimizer_params
+
+            cfg.optimizer = suggest_optimizer_params(cfg)
         if objective == "maximize_accuracy":
             cfg.objectives.quality_weight = 1.5
         if constraints:
@@ -105,7 +110,7 @@ class OpenPrompt:
 
     def _run_optimize(
         self,
-        prompt: str | Path,
+        prompt: str | Path | PromptAST,
         *,
         strategy: str | None,
         tests_path: str | Path | None,
@@ -117,7 +122,9 @@ class OpenPrompt:
         from openprompt.core.parser.parser import parse_any, parse_file
         from openprompt.providers.base import create_provider
 
-        if isinstance(prompt, Path) or (isinstance(prompt, str) and Path(prompt).exists()):
+        if isinstance(prompt, PromptAST):
+            ast = prompt
+        elif isinstance(prompt, Path) or (isinstance(prompt, str) and Path(prompt).exists()):
             path = Path(prompt)
             if path.is_dir():
                 prompt_file = resolve_prompt_in_directory(path)
@@ -132,7 +139,7 @@ class OpenPrompt:
         tests = None
         if tests_path:
             tests = load_test_suite(tests_path)
-        elif isinstance(prompt, (str, Path)) and Path(prompt).exists():
+        elif not isinstance(prompt, PromptAST) and isinstance(prompt, (str, Path)) and Path(prompt).exists():
             path = Path(prompt)
             resolved = resolve_test_suite(path if path.is_dir() else path)
             if resolved:

@@ -44,6 +44,9 @@ app = typer.Typer(
 )
 console = Console()
 
+dataset_app = typer.Typer(help="Extraction dataset workflows (PDF/image).")
+app.add_typer(dataset_app, name="dataset")
+
 
 @app.command()
 def init(
@@ -688,6 +691,198 @@ def cost_recommend_cmd(
     console.print(f"\nPareto frontier ({len(rec.pareto_frontier)} points):")
     for point in rec.pareto_frontier:
         console.print(f"  • {point.prompt_id}: quality={point.quality:.1%}, cost=${point.cost_usd:.4f}")
+
+
+@dataset_app.command("init")
+def dataset_init(
+    name: str = typer.Option("my-extraction", "--name", "-n"),
+    path: Path = typer.Option(Path("datasets/my-extraction"), "--path"),
+) -> None:
+    """Scaffold an extraction dataset with PDF/image samples and labels."""
+    root = path.resolve()
+    (root / "samples").mkdir(parents=True, exist_ok=True)
+    (root / "labels").mkdir(exist_ok=True)
+    (root / "example_pool.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "examples": [
+                    {
+                        "label": "invoice_basic",
+                        "input": "Extract vendor, date, total from the invoice.",
+                        "output": '{"vendor": "Acme Corp", "date": "2024-01-15", "total": 120.0}',
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest = {
+        "dataset": {
+            "name": name,
+            "task": "extraction",
+            "schema": {
+                "type": "object",
+                "required": ["vendor", "date", "total"],
+                "properties": {
+                    "vendor": {"type": "string"},
+                    "date": {"type": "string"},
+                    "total": {"type": "number"},
+                },
+            },
+            "example_pool": "example_pool.yaml",
+            "samples": [
+                {
+                    "name": "sample_invoice",
+                    "media": "samples/invoice.pdf",
+                    "input": "Extract vendor, date, and total as JSON.",
+                    "expected": '{"vendor": "Acme Corp", "date": "2024-01-15", "total": 120.0}',
+                }
+            ],
+        }
+    }
+    (root / "dataset.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    (root / "samples" / "README.txt").write_text(
+        "Place PDF or image files here. Add matching labels/*.json expected outputs.\n",
+        encoding="utf-8",
+    )
+    prompt_dir = root.parent.parent / "prompts" / name if (root.parent.parent / "prompts").exists() else root / "prompt"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    (prompt_dir / "prompt.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "prompt": {
+                    "schema_version": "1.1",
+                    "objective": {"task": "extraction", "raw": "Extract structured fields from documents."},
+                    "output": {"format": "json"},
+                    "dataset": {"path": str(root / "dataset.yaml"), "name": name},
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    console.print(f"[green]✓[/green] Dataset scaffold at {root}")
+    console.print("  dataset.yaml, samples/, labels/, example_pool.yaml")
+
+
+@dataset_app.command("eval")
+def dataset_eval(
+    dataset: Path = typer.Argument(..., help="dataset.yaml or dataset directory"),
+    prompt: Path = typer.Option(..., "--prompt", "-p", help="Prompt YAML/txt for extraction."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Evaluate an extraction prompt against a labeled PDF/image dataset."""
+    from openprompt.core.dataset.models import dataset_to_test_cases, load_dataset
+
+    config = find_project_config()
+    if provider:
+        config.model.provider = provider
+    if model:
+        config.model.name = model
+
+    ds = load_dataset(dataset)
+    tests = dataset_to_test_cases(ds)
+    ast = parse_file(prompt)
+    model_provider = create_provider(config.model.provider, config.model.name)
+    report = run_evaluation(
+        ast,
+        tests,
+        model_provider,
+        plugin_evaluators=discover_evaluators(),
+        provider_name=config.model.provider,
+        model_name=config.model.name,
+        pass_threshold=config.evaluation.pass_threshold,
+    )
+    if json_output:
+        console.print(emit_json({"accuracy": report.accuracy, "pass_rate": report.pass_rate, "warnings": report.warnings}))
+        return
+    console.print(f"\n[bold]Dataset Eval[/bold] ({ds.name})")
+    console.print(f"Accuracy:  {report.accuracy:.1%}")
+    console.print(f"Pass rate: {report.pass_rate:.1%}")
+    for result in report.results:
+        status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
+        console.print(f"  {status} {result.test.name}: {result.message}")
+
+
+@dataset_app.command("optimize")
+def dataset_optimize(
+    dataset: Path = typer.Argument(..., help="dataset.yaml or dataset directory"),
+    prompt: Path = typer.Option(..., "--prompt", "-p"),
+    strategy: str = typer.Option("extraction", "--strategy", "-s"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    vision: bool = typer.Option(False, "--vision", help="Attach sample media for vision models."),
+) -> None:
+    """Optimize a prompt for structured extraction on your dataset."""
+    from openprompt.core.dataset.models import load_dataset
+    from openprompt.core.media.loader import load_media
+
+    config = find_project_config()
+    if provider:
+        config.model.provider = provider
+    if model:
+        config.model.name = model
+
+    ds = load_dataset(dataset)
+    ast = parse_file(prompt)
+    if ds.field_schema and (not ast.output or not ast.output.schema_):
+        from openprompt.core.ast.models import OutputFormat, OutputSpec
+
+        ast.output = OutputSpec(format=OutputFormat.JSON, schema=ds.field_schema)
+    from openprompt.core.ast.models import DatasetRef
+
+    ast.dataset = ast.dataset or DatasetRef(
+        path=str(dataset.resolve()), name=ds.name, field_schema=ds.field_schema
+    )
+    if vision and ds.samples and ds.samples[0].media_path:
+        ast.media = [load_media(ds.samples[0].media_path, use_vision=True)]
+
+    client = OpenPrompt(provider=config.model.provider, model=config.model.name, config=config)
+    result = client.optimize(ast, strategy=strategy)
+
+    console.print(f"[green]✓[/green] Extraction optimize complete ({result.strategy})")
+    console.print(f"Score: {result.original_score:.1%} → {result.optimized_score:.1%}")
+    console.print(Panel(result.prompt))
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if output.suffix in {".yaml", ".yml"}:
+            data = ast_to_yaml_dict(result.optimized)
+            output.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        else:
+            output.write_text(result.prompt, encoding="utf-8")
+        console.print(f"Saved to {output}")
+
+
+@app.command()
+def tune(
+    prompt: Path = typer.Argument(..., help="Prompt to tune hyperparameters for."),
+    trials: int = typer.Option(20, "--trials"),
+    strategy: Optional[str] = typer.Option(None, "--strategy", "-s"),
+) -> None:
+    """Bayesian-style tuning of optimizer hyperparameters (eval budget, iterations)."""
+    from openprompt.core.optimizer.bayesian import suggest_optimizer_params, tune_optimizer
+
+    config = find_project_config()
+    tune_result = tune_optimizer(config, n_trials=trials)
+    suggested = suggest_optimizer_params(config, seed=config.optimizer.seed)
+
+    console.print("\n[bold]Optimizer Tuning[/bold]")
+    console.print(tune_result.reason)
+    console.print("Suggested parameters:")
+    for key, value in tune_result.best_params.items():
+        console.print(f"  {key}: {value}")
+
+    config.optimizer = suggested
+    if strategy:
+        config.optimizer.strategy = strategy  # type: ignore[assignment]
+
+    client = OpenPrompt(provider=config.model.provider, model=config.model.name, config=config)
+    result = client.optimize(prompt, strategy=strategy or str(config.optimizer.strategy))
+    console.print(f"\n[green]✓[/green] Optimized with tuned params — score {result.optimized_score:.1%}")
 
 
 @app.command()
