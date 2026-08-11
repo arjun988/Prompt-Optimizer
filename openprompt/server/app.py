@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from openprompt import __version__
 from openprompt.config.models import ServerConfig
+from openprompt.core.dataset.models import load_dataset
 from openprompt.providers.errors import ProviderError
 from openprompt.sdk.client import OpenPrompt
+from openprompt.server.dataset_handlers import run_dataset_eval, run_dataset_optimize
+from openprompt.server.dataset_upload import (
+    parse_labels_json,
+    parse_schema_json,
+    temp_dataset_from_upload,
+)
 from openprompt.server.middleware import configure_middleware
 from openprompt.server.schemas import (
     BenchmarkRequest,
@@ -15,6 +20,8 @@ from openprompt.server.schemas import (
     CompressRequest,
     CostRecommendRequest,
     CostRecommendResponse,
+    DatasetEvalResponse,
+    DatasetOptimizeResponse,
     EvaluateRequest,
     EvaluateResponse,
     HealthResponse,
@@ -27,10 +34,37 @@ from openprompt.server.schemas import (
 )
 from openprompt.server.tempfiles import temp_prompt_files, temp_tests_file
 
+try:
+    from starlette.requests import Request
+except ImportError:  # pragma: no cover - optional server extra
+    Request = object  # type: ignore[misc,assignment]
+
+
+async def _read_upload_files(files) -> list[tuple[str, bytes]]:
+    from fastapi import UploadFile
+    from starlette.datastructures import UploadFile as StarletteUploadFile
+
+    if isinstance(files, (UploadFile, StarletteUploadFile)):
+        file_items = [files]
+    elif isinstance(files, list):
+        file_items = files
+    else:
+        file_items = [files]
+
+    uploads: list[tuple[str, bytes]] = []
+    for upload in file_items:
+        if not isinstance(upload, (UploadFile, StarletteUploadFile)):
+            continue
+        name = upload.filename or "sample"
+        uploads.append((name, await upload.read()))
+    if not uploads:
+        raise ValueError("At least one sample file is required.")
+    return uploads
+
 
 def create_app(server_config: ServerConfig | None = None):
     try:
-        from fastapi import FastAPI, HTTPException
+        from fastapi import FastAPI, HTTPException, UploadFile
     except ImportError as exc:
         raise ImportError("Install server extras: pip install 'openprompt[server]'") from exc
 
@@ -182,6 +216,129 @@ def create_app(server_config: ServerConfig | None = None):
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            _handle_provider_error(exc)
+            raise
+
+    @app.post("/dataset/eval", response_model=DatasetEvalResponse)
+    async def dataset_eval_endpoint(request: Request) -> DatasetEvalResponse:
+        try:
+            form = await request.form()
+            prompt = str(form.get("prompt", ""))
+            if not prompt.strip():
+                raise HTTPException(status_code=400, detail="prompt is required")
+
+            provider = str(form.get("provider", "mock"))
+            model = str(form.get("model", "mock-model"))
+            dataset_name = str(form.get("dataset_name", "upload"))
+            labels = form.get("labels")
+            schema = form.get("schema")
+            raw_files = form.getlist("files")
+            uploads = await _read_upload_files(raw_files)
+
+            field_schema = parse_schema_json(str(schema) if schema is not None else None)
+            label_map = parse_labels_json(str(labels) if labels is not None else None)
+
+            with temp_dataset_from_upload(
+                uploads,
+                name=dataset_name,
+                labels=label_map,
+                field_schema=field_schema,
+            ) as dataset_dir:
+                report, meta = run_dataset_eval(
+                    prompt,
+                    dataset_dir,
+                    provider=provider,
+                    model=model,
+                )
+            return DatasetEvalResponse(
+                accuracy=report.accuracy,
+                pass_rate=report.pass_rate,
+                prompt_tokens=report.prompt_tokens,
+                total_cost_usd=report.total_cost_usd,
+                total_latency_ms=report.total_latency_ms,
+                judge_score=report.judge_score,
+                warnings=report.warnings,
+                results=[
+                    {
+                        "name": r.test.name,
+                        "passed": r.passed,
+                        "score": r.score,
+                        "message": r.message,
+                    }
+                    for r in report.results
+                ],
+                dataset_name=meta["dataset_name"],
+                sample_count=meta["sample_count"],
+                samples=meta["samples"],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _handle_provider_error(exc)
+            raise
+
+    @app.post("/dataset/optimize", response_model=DatasetOptimizeResponse)
+    async def dataset_optimize_endpoint(request: Request) -> DatasetOptimizeResponse:
+        try:
+            form = await request.form()
+            prompt = str(form.get("prompt", ""))
+            if not prompt.strip():
+                raise HTTPException(status_code=400, detail="prompt is required")
+
+            provider = str(form.get("provider", "mock"))
+            model = str(form.get("model", "mock-model"))
+            strategy = str(form.get("strategy", "extraction"))
+            vision_raw = str(form.get("vision", "false")).lower()
+            vision = vision_raw in {"1", "true", "yes", "on"}
+            dataset_name = str(form.get("dataset_name", "upload"))
+            labels = form.get("labels")
+            schema = form.get("schema")
+            raw_files = form.getlist("files")
+            uploads = await _read_upload_files(raw_files)
+
+            field_schema = parse_schema_json(str(schema) if schema is not None else None)
+            label_map = parse_labels_json(str(labels) if labels is not None else None)
+
+            with temp_dataset_from_upload(
+                uploads,
+                name=dataset_name,
+                labels=label_map,
+                field_schema=field_schema,
+            ) as dataset_dir:
+                ds = load_dataset(dataset_dir)
+                result = run_dataset_optimize(
+                    prompt,
+                    dataset_dir,
+                    provider=provider,
+                    model=model,
+                    strategy=strategy,
+                    vision=vision,
+                )
+            return DatasetOptimizeResponse(
+                prompt=result.prompt,
+                original_score=result.original_score,
+                optimized_score=result.optimized_score,
+                score_delta=result.score_delta,
+                original_tokens=result.original_tokens,
+                optimized_tokens=result.optimized_tokens,
+                token_delta_pct=result.token_delta_pct,
+                original_cost_usd=result.original_cost_usd,
+                optimized_cost_usd=result.optimized_cost_usd,
+                cost_delta_pct=result.cost_delta_pct,
+                strategy=result.strategy,
+                report_lines=result.report_lines,
+                warnings=getattr(result, "warnings", []),
+                dataset_name=ds.name,
+                sample_count=len(ds.samples),
+                vision_enabled=vision,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except HTTPException:
+            raise
         except Exception as exc:
             _handle_provider_error(exc)
             raise

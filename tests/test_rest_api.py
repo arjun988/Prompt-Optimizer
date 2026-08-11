@@ -77,3 +77,54 @@ def test_rate_limit_headers(client: TestClient) -> None:
     assert limited.post("/lint", json={"prompt": "a"}).status_code == 200
     assert limited.post("/lint", json={"prompt": "b"}).status_code == 200
     assert limited.post("/lint", json={"prompt": "c"}).status_code == 429
+
+
+def test_dataset_eval_and_optimize(authed: TestClient) -> None:
+    sample_content = b"Invoice #1001\nVendor: Acme Corp\nTotal: $120.00"
+    labels = '{"invoice.txt": "{\\"vendor\\": \\"Acme Corp\\", \\"total\\": 120}"}'
+    schema = '{"type":"object","properties":{"vendor":{"type":"string"},"total":{"type":"number"}}}'
+
+    eval_resp = authed.post(
+        "/dataset/eval",
+        data={
+            "prompt": "Extract vendor and total as JSON from the document.",
+            "provider": "mock",
+            "model": "mock-model",
+            "labels": labels,
+            "schema": schema,
+        },
+        files=[("files", ("invoice.txt", sample_content, "text/plain"))],
+    )
+    assert eval_resp.status_code == 200, eval_resp.text
+    eval_body = eval_resp.json()
+    assert eval_body["sample_count"] == 1
+    assert eval_body["pass_rate"] >= 0
+    assert len(eval_body["results"]) == 1
+
+    opt_resp = authed.post(
+        "/dataset/optimize",
+        data={
+            "prompt": "Extract vendor and total as JSON from the document.",
+            "provider": "mock",
+            "model": "mock-model",
+            "strategy": "extraction",
+            "labels": labels,
+            "schema": schema,
+            "vision": "false",
+        },
+        files=[("files", ("invoice.txt", sample_content, "text/plain"))],
+    )
+    assert opt_resp.status_code == 200, opt_resp.text
+    opt_body = opt_resp.json()
+    assert opt_body["prompt"]
+    assert opt_body["strategy"] == "extraction"
+    assert opt_body["sample_count"] == 1
+
+
+def test_dataset_requires_files(authed: TestClient) -> None:
+    response = authed.post(
+        "/dataset/eval",
+        data={"prompt": "Extract fields.", "provider": "mock"},
+    )
+    assert response.status_code == 400
+    assert "sample file" in response.json()["detail"].lower()

@@ -123,3 +123,42 @@ class CostRecommendResponse(BaseModel):
     pareto_frontier: list[dict[str, Any]]
     reason: str
     quality_per_dollar: float
+
+
+class DatasetSampleInfo(BaseModel):
+    name: str
+    media_path: str | None = None
+    has_expected: bool = False
+
+
+class DatasetEvalResponse(BaseModel):
+    accuracy: float
+    pass_rate: float
+    prompt_tokens: int
+    total_cost_usd: float
+    total_latency_ms: float
+    judge_score: float | None = None
+    warnings: list[str] = Field(default_factory=list)
+    results: list[dict[str, Any]]
+    dataset_name: str
+    sample_count: int
+    samples: list[DatasetSampleInfo] = Field(default_factory=list)
+
+
+class DatasetOptimizeResponse(BaseModel):
+    prompt: str
+    original_score: float
+    optimized_score: float
+    score_delta: float
+    original_tokens: int
+    optimized_tokens: int
+    token_delta_pct: float
+    original_cost_usd: float
+    optimized_cost_usd: float
+    cost_delta_pct: float
+    strategy: str
+    report_lines: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    dataset_name: str
+    sample_count: int
+    vision_enabled: bool = False

@@ -33,6 +33,7 @@ openprompt optimize examples/summarize --provider ollama --model llama3.2
 - **NSGA-II + bandit** — Multi-objective selection with LinUCB operator choice
 - **Plugins** — Entry points for operators, evaluators, strategies
 - **REST API** — `openprompt serve` with auth, CORS, rate limits
+- **Web dashboard** — Next.js UI in `dashboard/` (dark/light, lint/eval/optimize)
 - **Local observability** — SQLite run history (no telemetry by default)
 
 ## Quick Start
@@ -177,6 +178,45 @@ openprompt serve --api-key your-secret
 ```
 
 Send `X-API-Key: your-secret` on all endpoints except `/health`.
+
+#### Extraction datasets (multipart upload)
+
+Upload PDF/image samples with optional JSON labels and schema — same workflow as `openprompt dataset eval/optimize`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/dataset/eval \
+  -H "X-API-Key: your-secret" \
+  -F 'prompt=Extract vendor and total as JSON.' \
+  -F 'provider=mock' \
+  -F 'labels={"invoice.pdf":"{\"vendor\":\"Acme\",\"total\":120}"}' \
+  -F 'schema={"type":"object","properties":{"vendor":{"type":"string"}}}' \
+  -F 'files=@samples/invoice.pdf'
+
+curl -X POST http://127.0.0.1:8000/dataset/optimize \
+  -H "X-API-Key: your-secret" \
+  -F 'prompt=Extract vendor and total as JSON.' \
+  -F 'strategy=extraction' \
+  -F 'vision=true' \
+  -F 'files=@samples/invoice.pdf' \
+  -F 'files=@samples/receipt.png'
+```
+
+Fields: `prompt`, `provider`, `model`, `dataset_name`, `labels` (JSON map), `schema` (JSON Schema), `files` (one or more), `vision` (optimize only).
+
+### Web dashboard
+
+A Next.js UI lives in `dashboard/` — Cursor-style dark/light theme, no CLI required for lint/eval/optimize/benchmark.
+
+```bash
+# Terminal 1 — API
+openprompt serve
+
+# Terminal 2 — UI
+cd dashboard && npm install && npm run dev
+# http://localhost:3000 — configure URL & API key in Settings
+```
+
+See [dashboard/README.md](dashboard/README.md).
 
 ## Examples layout
 

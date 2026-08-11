@@ -275,6 +275,48 @@ class OpenPrompt:
         """Recommend best quality/cost tradeoff from optimization candidates."""
         return recommend_cost_quality(result, min_quality=min_quality)
 
+    def dataset_eval(
+        self,
+        prompt: str,
+        dataset_path: str | Path,
+        *,
+        pass_threshold: float | None = None,
+    ) -> EvalReport:
+        """Evaluate an extraction prompt against a PDF/image dataset on disk."""
+        from openprompt.server.dataset_handlers import run_dataset_eval
+
+        threshold = pass_threshold
+        if threshold is None and self.config:
+            threshold = self.config.evaluation.pass_threshold
+        report, _meta = run_dataset_eval(
+            prompt,
+            Path(dataset_path),
+            provider=self.provider,
+            model=self.model,
+            pass_threshold=threshold or 0.85,
+        )
+        return report
+
+    def dataset_optimize(
+        self,
+        prompt: str | Path,
+        dataset_path: str | Path,
+        *,
+        strategy: str = "extraction",
+        vision: bool = False,
+    ) -> OptimizeResult:
+        """Optimize a prompt for structured extraction on a labeled dataset."""
+        from openprompt.server.dataset_handlers import run_dataset_optimize
+
+        return run_dataset_optimize(
+            prompt,
+            Path(dataset_path),
+            provider=self.provider,
+            model=self.model,
+            strategy=strategy,
+            vision=vision,
+        )
+
     def _resolve_tests(self, prompt: str | Path, tests: list | Path | str | None):
         if isinstance(tests, list):
             return tests
