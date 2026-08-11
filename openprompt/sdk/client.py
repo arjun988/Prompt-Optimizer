@@ -89,6 +89,7 @@ class OpenPrompt:
         tests_path: str | Path | None = None,
         objective: str | None = None,
         constraints: dict[str, Any] | None = None,
+        eval_budget: int | None = None,
     ) -> OptimizeResult:
         """Optimize a prompt."""
         cfg = self.config.model_copy_deep()
@@ -96,11 +97,15 @@ class OpenPrompt:
             from openprompt.core.optimizer.bayesian import suggest_optimizer_params
 
             cfg.optimizer = suggest_optimizer_params(cfg)
+        if eval_budget is not None:
+            cfg.optimizer.eval_budget = eval_budget
         if objective == "maximize_accuracy":
             cfg.objectives.quality_weight = 1.5
         if constraints:
             if "max_tokens" in constraints:
                 cfg.objectives.token_weight = 0.5
+            if "eval_budget" in constraints and eval_budget is None:
+                cfg.optimizer.eval_budget = int(constraints["eval_budget"])
         return self._run_optimize(
             prompt,
             strategy=strategy,
@@ -247,6 +252,7 @@ class OpenPrompt:
         strategy: str | None = None,
         tests_path: str | Path | None = None,
         provider_keys: dict[str, str] | None = None,
+        eval_budget: int | None = None,
     ) -> MultiModelOptimizeResult:
         """
         Optimize the same prompt across multiple provider/model pairs.
@@ -257,10 +263,13 @@ class OpenPrompt:
           - ``\"openai:gpt-4o-mini\"`` strings
         """
         normalized = [_coerce_model_spec(m) for m in models]
+        cfg = self.config.model_copy_deep()
+        if eval_budget is not None:
+            cfg.optimizer.eval_budget = eval_budget
         return multi_model_optimize(
             prompt,
             normalized,
-            config=self.config,
+            config=cfg,
             strategy=strategy,
             tests_path=tests_path,
             api_key=self.api_key,

@@ -5,11 +5,12 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Header } from "@/components/layout/header";
 import { ProviderSelect } from "@/components/shared/provider-select";
 import { PromptEditor } from "@/components/shared/prompt-editor";
-import { RunBar, StrategySelect } from "@/components/shared/run-bar";
+import { RunBar, StrategySelect, EvalBudgetSelect, DEFAULT_EVAL_BUDGET } from "@/components/shared/run-bar";
 import { EmptyState, ErrorState, LoadingState, MetricGrid } from "@/components/shared/status";
 import { TestSuiteEditor } from "@/components/shared/test-suite-editor";
 import { Badge } from "@/components/ui/badge";
 import { ApiError, createApiClient, useSettings } from "@/lib/api";
+import { usesEvalBudget, safeTestCount } from "@/lib/optimize-budget";
 import { parseTests, type TestFormat } from "@/lib/test-formats";
 import type { OptimizeResponse } from "@/lib/types";
 import { DEFAULT_PROMPT, DEFAULT_TESTS, DEFAULT_TESTS_CSV, DEFAULT_TESTS_JSON } from "@/lib/types";
@@ -27,6 +28,7 @@ export default function OptimizePage() {
   const [testFormat, setTestFormat] = useState<TestFormat>("yaml");
   const [testsRaw, setTestsRaw] = useState(DEFAULT_TESTS);
   const [strategy, setStrategy] = useState("hybrid");
+  const [evalBudget, setEvalBudget] = useState(DEFAULT_EVAL_BUDGET);
   const [result, setResult] = useState<OptimizeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +50,7 @@ export default function OptimizePage() {
         provider: settings.provider,
         model: settings.model,
         tests,
+        ...(usesEvalBudget(strategy) ? { eval_budget: evalBudget } : {}),
       })) as OptimizeResponse;
       setResult(data);
     } catch (e) {
@@ -143,6 +146,12 @@ export default function OptimizePage() {
 
         <RunBar onRun={run} loading={loading} label="Run optimize">
           <StrategySelect value={strategy} onChange={setStrategy} />
+          <EvalBudgetSelect
+            strategy={strategy}
+            value={evalBudget}
+            onChange={setEvalBudget}
+            testCount={safeTestCount(parseTests, testFormat, testsRaw)}
+          />
           <ProviderSelect className="min-w-[280px]" />
         </RunBar>
       </main>

@@ -38,6 +38,12 @@ class OptimizeRequest(BaseModel):
     tests: list[dict[str, Any]] | None = None
     objective: str | None = None
     constraints: dict[str, Any] | None = None
+    eval_budget: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+        description="Max evaluation rounds for hybrid/evolutionary/grpo (each round runs every test).",
+    )
 
 
 class OptimizeResponse(BaseModel):
@@ -106,6 +112,12 @@ class MultiModelOptimizeRequest(BaseModel):
     strategy: str | None = "rewrite"
     tests: list[dict[str, Any]] | None = None
     provider_keys: dict[str, str] | None = None
+    eval_budget: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+        description="Max evaluation rounds per model for budgeted strategies.",
+    )
 
 
 class MultiModelOptimizeResponse(BaseModel):

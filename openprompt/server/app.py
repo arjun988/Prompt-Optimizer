@@ -116,6 +116,7 @@ def create_app(server_config: ServerConfig | None = None):
                     tests_path=tests_path,
                     objective=body.objective,
                     constraints=body.constraints,
+                    eval_budget=body.eval_budget,
                 )
             return _optimize_response(result)
         except Exception as exc:
@@ -191,6 +192,7 @@ def create_app(server_config: ServerConfig | None = None):
                     strategy=body.strategy,
                     tests_path=tests_path,
                     provider_keys=body.provider_keys,
+                    eval_budget=body.eval_budget,
                 )
             best_q = result.best_quality
             best_c = result.lowest_cost

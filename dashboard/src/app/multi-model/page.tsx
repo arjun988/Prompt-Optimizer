@@ -4,13 +4,14 @@ import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Header } from "@/components/layout/header";
 import { PromptEditor } from "@/components/shared/prompt-editor";
-import { RunBar, StrategySelect } from "@/components/shared/run-bar";
+import { RunBar, StrategySelect, EvalBudgetSelect, DEFAULT_EVAL_BUDGET } from "@/components/shared/run-bar";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/status";
 import { TestSuiteEditor } from "@/components/shared/test-suite-editor";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label, Textarea } from "@/components/ui/input";
 import { ApiError, createApiClient, useSettings } from "@/lib/api";
+import { usesEvalBudget, safeTestCount } from "@/lib/optimize-budget";
 import { parseTests, type TestFormat } from "@/lib/test-formats";
 import type { MultiModelResponse } from "@/lib/types";
 import { DEFAULT_PROMPT, DEFAULT_TESTS, DEFAULT_TESTS_CSV, DEFAULT_TESTS_JSON } from "@/lib/types";
@@ -48,6 +49,7 @@ export default function MultiModelPage() {
   const [testsRaw, setTestsRaw] = useState(DEFAULT_TESTS);
   const [modelsText, setModelsText] = useState(DEFAULT_MODELS);
   const [strategy, setStrategy] = useState("rewrite");
+  const [evalBudget, setEvalBudget] = useState(DEFAULT_EVAL_BUDGET);
   const [result, setResult] = useState<MultiModelResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +71,7 @@ export default function MultiModelPage() {
         models,
         strategy,
         tests,
+        ...(usesEvalBudget(strategy) ? { eval_budget: evalBudget } : {}),
       })) as MultiModelResponse;
       setResult(data);
     } catch (e) {
@@ -165,6 +168,13 @@ export default function MultiModelPage() {
 
         <RunBar onRun={run} loading={loading} label="Run comparison">
           <StrategySelect value={strategy} onChange={setStrategy} />
+          <EvalBudgetSelect
+            strategy={strategy}
+            value={evalBudget}
+            onChange={setEvalBudget}
+            testCount={safeTestCount(parseTests, testFormat, testsRaw)}
+            modelCount={parseModels(modelsText).length || 1}
+          />
         </RunBar>
       </main>
     </AppShell>

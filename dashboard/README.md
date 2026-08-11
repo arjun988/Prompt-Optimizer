@@ -8,7 +8,7 @@ Web UI for OpenPrompt — a Cursor-inspired black/white/gray workspace with dark
 - **Lint** — heuristic prompt quality (offline, no API key)
 - **Evaluate** — run test suites (YAML, JSON, or CSV)
 - **Dataset** — upload PDFs/images + labels, eval & optimize extraction prompts
-- **Optimize** — all strategies; test input as YAML, JSON, or CSV
+- **Optimize** — all strategies; YAML/JSON/CSV tests; **eval budget** control for hybrid/evolutionary
 - **Compress** — token reduction
 - **Benchmark** — multi-prompt comparison
 - **Multi-Model** — cross-provider optimization

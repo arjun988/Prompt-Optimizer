@@ -34,6 +34,30 @@ def test_optimize_requires_api_key(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_optimize_with_eval_budget(authed: TestClient) -> None:
+    opt_resp = authed.post(
+        "/optimize",
+        json={
+            "prompt": "Summarize the article.",
+            "strategy": "hybrid",
+            "provider": "mock",
+            "eval_budget": 5,
+            "tests": [
+                {
+                    "name": "non_empty",
+                    "input": "Short text.",
+                    "metric": "regex",
+                    "pattern": ".+",
+                }
+            ],
+        },
+    )
+    assert opt_resp.status_code == 200
+    body = opt_resp.json()
+    assert body["prompt"]
+    assert any("5" in line or "evaluation" in line.lower() for line in body.get("report_lines", []))
+
+
 def test_lint_and_optimize(authed: TestClient) -> None:
     lint_resp = authed.post("/lint", json={"prompt": "Summarize the article."})
     assert lint_resp.status_code == 200

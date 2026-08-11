@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Label, Select } from "@/components/ui/input";
+import { DEFAULT_EVAL_BUDGET, estimateOptimizeApiCalls, usesEvalBudget } from "@/lib/optimize-budget";
 import { STRATEGIES } from "@/lib/types";
 
 interface StrategySelectProps {
@@ -23,6 +24,52 @@ export function StrategySelect({ value, onChange }: StrategySelectProps) {
     </div>
   );
 }
+
+interface EvalBudgetSelectProps {
+  strategy: string;
+  value: number;
+  onChange: (value: number) => void;
+  testCount: number;
+  modelCount?: number;
+}
+
+const EVAL_BUDGET_PRESETS = [10, 25, 50, 100, 200];
+
+export function EvalBudgetSelect({
+  strategy,
+  value,
+  onChange,
+  testCount,
+  modelCount = 1,
+}: EvalBudgetSelectProps) {
+  if (!usesEvalBudget(strategy)) {
+    return null;
+  }
+
+  const estimate = estimateOptimizeApiCalls(strategy, value, testCount, modelCount);
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="eval-budget">Eval rounds (API budget)</Label>
+      <Select
+        id="eval-budget"
+        value={String(value)}
+        onChange={(e) => onChange(Number(e.target.value))}
+      >
+        {EVAL_BUDGET_PRESETS.map((n) => (
+          <option key={n} value={n}>
+            {n} rounds
+          </option>
+        ))}
+      </Select>
+      {estimate.label && (
+        <p className="text-[10px] leading-snug text-muted-foreground">{estimate.label}</p>
+      )}
+    </div>
+  );
+}
+
+export { DEFAULT_EVAL_BUDGET };
 
 interface RunBarProps {
   onRun: () => void;
