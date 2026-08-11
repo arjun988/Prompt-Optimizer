@@ -8,14 +8,15 @@ from typing import Any
 
 import httpx
 
+from openprompt.config.model_catalog import default_model_for
 from openprompt.providers.base import Message, ModelResponse
 
 
 class OllamaProvider:
     name = "ollama"
 
-    def __init__(self, model: str = "llama3.2", base_url: str | None = None) -> None:
-        self.model = model
+    def __init__(self, model: str | None = None, base_url: str | None = None) -> None:
+        self.model = model or default_model_for("ollama")
         self.base_url = (base_url or os.environ.get("OLLAMA_HOST") or "http://localhost:11434").rstrip("/")
 
     def generate(self, messages: list[Message], **kwargs: Any) -> ModelResponse:

@@ -19,7 +19,8 @@ openprompt optimize examples/summarize --tests examples/summarize/tests.yaml --s
 openprompt eval examples/summarize
 
 # Real model (requires provider API key or local Ollama)
-openprompt optimize examples/summarize --provider ollama --model llama3.2
+openprompt optimize examples/summarize --provider openai --model gpt-5.6-terra
+openprompt optimize examples/summarize --provider gemini --model gemini-3.6-flash
 ```
 
 ## Features

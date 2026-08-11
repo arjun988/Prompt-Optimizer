@@ -6,14 +6,15 @@ import os
 import time
 from typing import Any
 
+from openprompt.config.model_catalog import default_model_for
 from openprompt.providers.base import Message, ModelResponse
 
 
 class AnthropicProvider:
     name = "anthropic"
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", api_key: str | None = None) -> None:
-        self.model = model
+    def __init__(self, model: str | None = None, api_key: str | None = None) -> None:
+        self.model = model or default_model_for("anthropic")
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY or pass api_key.")

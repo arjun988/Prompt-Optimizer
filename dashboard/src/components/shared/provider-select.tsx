@@ -1,13 +1,13 @@
 "use client";
 
-import { PROVIDERS } from "@/lib/types";
+import { PROVIDERS, providerById } from "@/lib/models";
 import { useSettings } from "@/lib/api";
 import { Label, Select } from "@/components/ui/input";
 
 export function ProviderSelect({ className }: { className?: string }) {
   const { settings, setSettings } = useSettings();
 
-  const providerDef = PROVIDERS.find((p) => p.id === settings.provider) ?? PROVIDERS[0];
+  const providerDef = providerById(settings.provider);
 
   return (
     <div className={className}>
@@ -18,8 +18,8 @@ export function ProviderSelect({ className }: { className?: string }) {
             id="provider"
             value={settings.provider}
             onChange={(e) => {
-              const next = PROVIDERS.find((p) => p.id === e.target.value) ?? PROVIDERS[0];
-              setSettings({ provider: next.id, model: next.models[0] });
+              const next = providerById(e.target.value);
+              setSettings({ provider: next.id, model: next.defaultModel });
             }}
           >
             {PROVIDERS.map((p) => (

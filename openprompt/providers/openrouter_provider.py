@@ -6,6 +6,7 @@ import os
 import time
 from typing import Any, Iterator
 
+from openprompt.config.model_catalog import default_model_for
 from openprompt.providers.base import Message, ModelResponse
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
@@ -16,11 +17,11 @@ class OpenRouterProvider:
 
     def __init__(
         self,
-        model: str = "openai/gpt-4o-mini",
+        model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
-        self.model = model
+        self.model = model or default_model_for("openrouter")
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         self.base_url = (base_url or os.environ.get("OPENROUTER_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
         if not self.api_key:

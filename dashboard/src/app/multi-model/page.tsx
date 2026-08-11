@@ -14,8 +14,10 @@ import type { MultiModelResponse } from "@/lib/types";
 import { DEFAULT_PROMPT, DEFAULT_TESTS } from "@/lib/types";
 
 const DEFAULT_MODELS = `mock:mock-model
-openai:gpt-4o-mini
-anthropic:claude-3-5-haiku-latest`;
+openai:gpt-5.6-terra
+anthropic:claude-sonnet-5
+google/gemini-3.6-flash
+x-ai/grok-4.3`;
 
 function parseModels(raw: string) {
   return raw

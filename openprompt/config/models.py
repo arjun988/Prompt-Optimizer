@@ -27,8 +27,8 @@ class MultiModelEntry(BaseModel):
 class MetaModelConfig(BaseModel):
     """Cheap model that proposes prompt mutations (GRPO proposer)."""
 
-    provider: str = "mock"
-    model: str = "mock-model"
+    provider: str = "openai"
+    model: str = "gpt-5.6-luna"
 
 
 class OptimizerConfig(BaseModel):

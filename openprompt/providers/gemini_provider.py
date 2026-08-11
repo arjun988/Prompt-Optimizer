@@ -6,6 +6,7 @@ import os
 import time
 from typing import Any
 
+from openprompt.config.model_catalog import default_model_for
 from openprompt.providers.base import Message, ModelResponse
 
 
@@ -20,10 +21,10 @@ class GeminiProvider:
 
     def __init__(
         self,
-        model: str = "gemini-2.0-flash",
+        model: str | None = None,
         api_key: str | None = None,
     ) -> None:
-        self.model = model
+        self.model = model or default_model_for("gemini")
         self.api_key = (
             api_key
             or os.environ.get("GOOGLE_API_KEY")

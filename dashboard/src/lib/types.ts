@@ -116,15 +116,8 @@ export const STRATEGIES = [
   "extraction",
 ] as const;
 
-export const PROVIDERS = [
-  { id: "mock", label: "Mock (offline)", models: ["mock-model"] },
-  { id: "openai", label: "OpenAI", models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"] },
-  { id: "anthropic", label: "Anthropic", models: ["claude-3-5-haiku-latest", "claude-sonnet-4-20250514"] },
-  { id: "ollama", label: "Ollama", models: ["llama3.2", "mistral", "qwen2.5"] },
-  { id: "gemini", label: "Gemini", models: ["gemini-2.0-flash", "gemini-1.5-pro"] },
-  { id: "grok", label: "Grok", models: ["grok-2-latest"] },
-  { id: "openrouter", label: "OpenRouter", models: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"] },
-] as const;
+export { PROVIDERS, providerById } from "./models";
+export type { ProviderDef } from "./models";
 
 export const DEFAULT_PROMPT = `Summarize this article.`;
 

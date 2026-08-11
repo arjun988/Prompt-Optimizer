@@ -6,6 +6,7 @@ import os
 import time
 from typing import Any
 
+from openprompt.config.model_catalog import default_model_for
 from openprompt.providers.base import Message, ModelResponse, format_openai_content
 
 
@@ -14,11 +15,11 @@ class OpenAIProvider:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
-        self.model = model
+        self.model = model or default_model_for("openai")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self.base_url = base_url
         if not self.api_key:
