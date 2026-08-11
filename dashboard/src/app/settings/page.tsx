@@ -6,7 +6,22 @@ import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { ApiError, createApiClient, DEFAULT_SETTINGS, useSettings } from "@/lib/api";
+import {
+  ApiError,
+  createApiClient,
+  DEFAULT_PROVIDER_KEYS,
+  DEFAULT_SETTINGS,
+  useSettings,
+} from "@/lib/api";
+import type { ProviderKeys } from "@/lib/types";
+
+const PROVIDER_KEY_FIELDS: { id: keyof ProviderKeys; label: string; placeholder: string }[] = [
+  { id: "openai", label: "OpenAI API key", placeholder: "sk-..." },
+  { id: "anthropic", label: "Anthropic (Claude) API key", placeholder: "sk-ant-..." },
+  { id: "gemini", label: "Gemini API key", placeholder: "AIza..." },
+  { id: "grok", label: "Grok (xAI) API key", placeholder: "xai-..." },
+  { id: "openrouter", label: "OpenRouter API key", placeholder: "sk-or-..." },
+];
 
 export default function SettingsPage() {
   const { settings, setSettings, loaded } = useSettings();
@@ -30,6 +45,17 @@ export default function SettingsPage() {
     setSettings(DEFAULT_SETTINGS);
   };
 
+  const clearProviderKeys = () => {
+    setDraft({ ...draft, providerKeys: { ...DEFAULT_PROVIDER_KEYS } });
+  };
+
+  const setProviderKey = (id: keyof ProviderKeys, value: string) => {
+    setDraft({
+      ...draft,
+      providerKeys: { ...draft.providerKeys, [id]: value },
+    });
+  };
+
   const testConnection = async () => {
     setTesting(true);
     setHealthMsg(null);
@@ -45,14 +71,14 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <Header title="Settings" description="API connection and defaults" />
+      <Header title="Settings" description="API connection, provider keys, and defaults" />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-xl space-y-6 animate-slide-up">
           <Card>
             <CardHeader>
-              <CardTitle>API connection</CardTitle>
+              <CardTitle>OpenPrompt server</CardTitle>
               <CardDescription>
-                Point the dashboard at your OpenPrompt REST server
+                Connection to your local or remote OpenPrompt REST API
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -66,7 +92,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="apiKey">API key (optional)</Label>
+                <Label htmlFor="apiKey">OpenPrompt API key (optional)</Label>
                 <Input
                   id="apiKey"
                   type="password"
@@ -81,7 +107,7 @@ export default function SettingsPage() {
                   {testing ? "Testing…" : "Test connection"}
                 </Button>
                 <Button variant="ghost" onClick={reset}>
-                  Reset defaults
+                  Reset all
                 </Button>
               </div>
               {healthMsg && (
@@ -92,23 +118,45 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Environment variables</CardTitle>
-              <CardDescription>Set on the server process, not in this UI</CardDescription>
+              <CardTitle>Provider API keys</CardTitle>
+              <CardDescription>
+                Used when you evaluate or optimize with OpenAI, Claude, Gemini, Grok, or
+                OpenRouter. Stored in your browser only — sent to your OpenPrompt server per
+                request, not logged by the dashboard.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <ul className="space-y-2 font-mono text-xs text-muted-foreground">
-                <li>
-                  <span className="text-foreground">OPENPROMPT_API_KEY</span> — REST auth
-                </li>
-                <li>
-                  <span className="text-foreground">OPENPROMPT_CORS_ORIGINS</span> — e.g.{" "}
-                  http://localhost:3000
-                </li>
-                <li>
-                  <span className="text-foreground">OPENAI_API_KEY</span>,{" "}
-                  <span className="text-foreground">ANTHROPIC_API_KEY</span>, etc.
-                </li>
-              </ul>
+            <CardContent className="space-y-4">
+              {PROVIDER_KEY_FIELDS.map((field) => (
+                <div key={field.id} className="space-y-1.5">
+                  <Label htmlFor={`pk-${field.id}`}>{field.label}</Label>
+                  <Input
+                    id={`pk-${field.id}`}
+                    type="password"
+                    autoComplete="off"
+                    value={draft.providerKeys[field.id]}
+                    onChange={(e) => setProviderKey(field.id, e.target.value)}
+                    placeholder={field.placeholder}
+                  />
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                Mock and Ollama do not need keys here. Ollama uses{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono">OLLAMA_HOST</code> on
+                the server if not localhost.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                On the machine running <code className="font-mono">openprompt serve</code>, install
+                provider SDKs once:{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono">
+                  pip install -e &quot;.[gemini,openai,anthropic,server]&quot;
+                </code>
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button onClick={save}>{saved ? "Saved" : "Save provider keys"}</Button>
+                <Button variant="ghost" onClick={clearProviderKeys}>
+                  Clear provider keys
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

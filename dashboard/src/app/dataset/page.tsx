@@ -65,9 +65,11 @@ export default function DatasetPage() {
 
       const client = createApiClient(settings);
       if (mode === "eval") {
-        setEvalResult((await client.datasetEval(form)) as DatasetEvalResponse);
+        setEvalResult((await client.datasetEval(form, settings.provider)) as DatasetEvalResponse);
       } else {
-        setOptResult((await client.datasetOptimize(form)) as DatasetOptimizeResponse);
+        setOptResult(
+          (await client.datasetOptimize(form, settings.provider)) as DatasetOptimizeResponse,
+        );
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Request failed");

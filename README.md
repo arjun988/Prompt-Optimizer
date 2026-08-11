@@ -15,6 +15,10 @@ openprompt lint examples/summarize/prompt.txt
 # Optimize with bundled tests (mock provider — no API key)
 openprompt optimize examples/summarize --tests examples/summarize/tests.yaml --strategy hybrid
 
+# Same tests as JSON or CSV
+openprompt optimize examples/summarize --tests examples/summarize/tests.json
+openprompt eval examples/summarize --tests examples/summarize/tests.csv
+
 # Evaluate a task directory (prompt.txt + tests.yaml)
 openprompt eval examples/summarize
 
@@ -219,13 +223,48 @@ cd dashboard && npm install && npm run dev
 
 See [dashboard/README.md](dashboard/README.md).
 
+## Test suite formats
+
+Evaluate and optimize accept **YAML**, **JSON**, or **CSV** test files (CLI `--tests` path or dashboard editor tabs).
+
+**YAML** (default layout):
+
+```yaml
+tests:
+  - name: summary_has_bullets
+    input: "Long article text…"
+    metric: contains
+    expected: "-"
+```
+
+**JSON** — array of tests or `{ "tests": [...] }`:
+
+```json
+[
+  { "input": "Long article text…", "expected": "remote", "metric": "contains" },
+  { "name": "non_empty", "input": "Short text.", "pattern": ".{10,}", "metric": "regex" }
+]
+```
+
+**CSV** — header row with at least `input`; optional `name`, `expected`, `metric`, `pattern`:
+
+```csv
+name,input,expected,metric
+t1,"Article about remote work.",remote,contains
+t2,"Another input.",expected text,exact_match
+```
+
+In the dashboard, use the **YAML / JSON / CSV** tabs on Evaluate, Optimize, and Multi-Model, or upload a `.yaml`, `.json`, or `.csv` file.
+
 ## Examples layout
 
 ```
 examples/
 ├── summarize/
 │   ├── prompt.txt
-│   └── tests.yaml
+│   ├── tests.yaml
+│   ├── tests.json
+│   └── tests.csv
 ├── classification/
 │   ├── prompt.txt
 │   └── tests.yaml

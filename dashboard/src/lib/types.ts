@@ -96,11 +96,20 @@ export interface DatasetOptimizeResponse extends OptimizeResponse {
   vision_enabled: boolean;
 }
 
+export interface ProviderKeys {
+  openai: string;
+  anthropic: string;
+  gemini: string;
+  grok: string;
+  openrouter: string;
+}
+
 export interface ApiSettings {
   baseUrl: string;
   apiKey: string;
   provider: string;
   model: string;
+  providerKeys: ProviderKeys;
 }
 
 export const STRATEGIES = [
@@ -162,6 +171,30 @@ export const DEFAULT_TESTS = `tests:
     input: "The market grew 12% year over year."
     metric: regex
     pattern: ".{10,}"`;
+
+export const DEFAULT_TESTS_JSON = `[
+  {
+    "name": "summary_has_bullets",
+    "input": "Artificial intelligence is reshaping healthcare through faster diagnosis and automation.",
+    "expected": "-",
+    "metric": "contains"
+  },
+  {
+    "name": "summary_covers_topic",
+    "input": "Remote work increased productivity for knowledge workers in 2024.",
+    "expected": "remote",
+    "metric": "contains"
+  },
+  {
+    "input": "The market grew 12% year over year.",
+    "expected": "growth"
+  }
+]`;
+
+export const DEFAULT_TESTS_CSV = `name,input,expected,metric
+summary_has_bullets,"Artificial intelligence is reshaping healthcare through faster diagnosis and automation.",-,contains
+summary_covers_topic,"Remote work increased productivity for knowledge workers in 2024.",remote,contains
+non_empty,"The market grew 12% year over year.",growth,contains`;
 
 export const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: "LayoutDashboard" },

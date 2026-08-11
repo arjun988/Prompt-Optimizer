@@ -53,10 +53,11 @@ def run_dataset_eval(
     provider: str = "mock",
     model: str = "mock-model",
     pass_threshold: float = 0.85,
+    api_key: str | None = None,
 ) -> tuple[EvalReport, dict[str, Any]]:
     ast, ds = prepare_extraction_ast(prompt, dataset_path, vision=False)
     tests = dataset_to_test_cases(ds)
-    model_provider = create_provider(provider, model)
+    model_provider = create_provider(provider, model, api_key=api_key)
     report = run_evaluation(
         ast,
         tests,
@@ -89,7 +90,8 @@ def run_dataset_optimize(
     model: str = "mock-model",
     strategy: str = "extraction",
     vision: bool = False,
+    api_key: str | None = None,
 ) -> OptimizeResult:
     ast, _ds = prepare_extraction_ast(prompt, dataset_path, vision=vision)
-    client = OpenPrompt(provider=provider, model=model, warn_mock=False)
+    client = OpenPrompt(provider=provider, model=model, api_key=api_key, warn_mock=False)
     return client.optimize(ast, strategy=strategy)

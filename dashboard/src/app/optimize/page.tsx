@@ -7,27 +7,41 @@ import { ProviderSelect } from "@/components/shared/provider-select";
 import { PromptEditor } from "@/components/shared/prompt-editor";
 import { RunBar, StrategySelect } from "@/components/shared/run-bar";
 import { EmptyState, ErrorState, LoadingState, MetricGrid } from "@/components/shared/status";
+import { TestSuiteEditor } from "@/components/shared/test-suite-editor";
 import { Badge } from "@/components/ui/badge";
-import { ApiError, createApiClient, parseTestsYaml, useSettings } from "@/lib/api";
+import { ApiError, createApiClient, useSettings } from "@/lib/api";
+import { parseTests, type TestFormat } from "@/lib/test-formats";
 import type { OptimizeResponse } from "@/lib/types";
-import { DEFAULT_PROMPT, DEFAULT_TESTS } from "@/lib/types";
+import { DEFAULT_PROMPT, DEFAULT_TESTS, DEFAULT_TESTS_CSV, DEFAULT_TESTS_JSON } from "@/lib/types";
 import { formatPercent, formatScore, formatUsd } from "@/lib/utils";
+
+const DEFAULTS: Record<TestFormat, string> = {
+  yaml: DEFAULT_TESTS,
+  json: DEFAULT_TESTS_JSON,
+  csv: DEFAULT_TESTS_CSV,
+};
 
 export default function OptimizePage() {
   const { settings, loaded } = useSettings();
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-  const [testsYaml, setTestsYaml] = useState(DEFAULT_TESTS);
+  const [testFormat, setTestFormat] = useState<TestFormat>("yaml");
+  const [testsRaw, setTestsRaw] = useState(DEFAULT_TESTS);
   const [strategy, setStrategy] = useState("hybrid");
   const [result, setResult] = useState<OptimizeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const onFormatChange = (format: TestFormat) => {
+    setTestFormat(format);
+    setTestsRaw(DEFAULTS[format]);
+  };
 
   const run = async () => {
     if (!loaded) return;
     setLoading(true);
     setError(null);
     try {
-      const tests = parseTestsYaml(testsYaml);
+      const tests = parseTests(testFormat, testsRaw);
       const data = (await createApiClient(settings).optimize({
         prompt,
         strategy,
@@ -38,7 +52,7 @@ export default function OptimizePage() {
       setResult(data);
     } catch (e) {
       setResult(null);
-      setError(e instanceof ApiError ? e.message : "Optimization failed");
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Optimization failed");
     } finally {
       setLoading(false);
     }
@@ -51,10 +65,11 @@ export default function OptimizePage() {
         <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-2">
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto border-b border-border p-5 xl:border-b-0 xl:border-r">
             <PromptEditor label="Original prompt" value={prompt} onChange={setPrompt} rows={8} />
-            <PromptEditor
-              label="Tests (YAML)"
-              value={testsYaml}
-              onChange={setTestsYaml}
+            <TestSuiteEditor
+              format={testFormat}
+              onFormatChange={onFormatChange}
+              value={testsRaw}
+              onChange={setTestsRaw}
               rows={12}
             />
           </div>
@@ -65,7 +80,7 @@ export default function OptimizePage() {
             {!loading && !error && !result && (
               <EmptyState
                 title="No optimization yet"
-                description="Pick a strategy and run — results appear here with before/after metrics."
+                description="Add tests as YAML, JSON, or CSV, pick a strategy, and run."
               />
             )}
             {result && !loading && (

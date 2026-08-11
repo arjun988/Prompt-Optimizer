@@ -74,17 +74,27 @@ class EvalReport:
 
 
 def load_test_suite(path: Path | str) -> list[TestCase]:
-    """Load tests from YAML file or directory."""
+    """Load tests from YAML, JSON, or CSV file or directory."""
     path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix in {".json", ".csv"}:
+        from openprompt.core.evaluator.test_formats import load_test_suite_file
+
+        return load_test_suite_file(path)
+
     if path.is_dir():
         tests: list[TestCase] = []
         for file in sorted(path.glob("**/*")):
-            if file.suffix in {".yaml", ".yml"} and file.name.startswith(("test", "tests")):
+            if file.suffix.lower() in {".yaml", ".yml", ".json", ".csv"} and file.name.startswith(
+                ("test", "tests")
+            ):
                 tests.extend(load_test_suite(file))
-            elif file.name == "tests.yaml":
+            elif file.name in {"tests.yaml", "tests.json", "tests.csv"}:
                 tests.extend(load_test_suite(file))
-        if not tests and (path / "tests.yaml").exists():
-            return load_test_suite(path / "tests.yaml")
+        if not tests:
+            for candidate in ("tests.yaml", "tests.yml", "tests.json", "tests.csv"):
+                if (path / candidate).exists():
+                    return load_test_suite(path / candidate)
         return tests
 
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

@@ -246,6 +246,7 @@ class OpenPrompt:
         *,
         strategy: str | None = None,
         tests_path: str | Path | None = None,
+        provider_keys: dict[str, str] | None = None,
     ) -> MultiModelOptimizeResult:
         """
         Optimize the same prompt across multiple provider/model pairs.
@@ -264,6 +265,7 @@ class OpenPrompt:
             tests_path=tests_path,
             api_key=self.api_key,
             base_url=self.base_url,
+            provider_keys=provider_keys,
         )
 
     def recommend_cost_quality(

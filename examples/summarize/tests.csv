@@ -1,0 +1,4 @@
+name,input,expected,metric,pattern
+summary_has_bullets,"Artificial intelligence is reshaping healthcare through faster diagnosis, personalized treatment plans, and operational automation. Critics raise concerns about bias, privacy, and regulatory gaps.",-,contains,
+summary_covers_topic,"Remote work increased productivity for knowledge workers in 2024.",remote,contains,
+non_empty_response,"The market grew 12% year over year.",,,regex,.{10,}

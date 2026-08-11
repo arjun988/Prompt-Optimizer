@@ -6,9 +6,9 @@ Web UI for OpenPrompt — a Cursor-inspired black/white/gray workspace with dark
 
 - **Overview** — quick navigation and setup guide
 - **Lint** — heuristic prompt quality (offline, no API key)
-- **Evaluate** — run YAML test suites
+- **Evaluate** — run test suites (YAML, JSON, or CSV)
 - **Dataset** — upload PDFs/images + labels, eval & optimize extraction prompts
-- **Optimize** — all strategies (hybrid, evolutionary, RAG, agent, GRPO, …)
+- **Optimize** — all strategies; test input as YAML, JSON, or CSV
 - **Compress** — token reduction
 - **Benchmark** — multi-prompt comparison
 - **Multi-Model** — cross-provider optimization
@@ -31,7 +31,11 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-If the API uses auth, set `OPENPROMPT_API_KEY` on the server and the same value in **Settings** (or `NEXT_PUBLIC_API_KEY` in `.env.local`).
+### API keys
+
+In **Settings → Provider API keys**, add OpenAI, Anthropic (Claude), Gemini, Grok, and/or OpenRouter keys. They are stored in your browser (localStorage) and sent to the OpenPrompt server with each evaluate/optimize request. You can then pick any provider/model on Lint, Evaluate, Optimize, Dataset, etc.
+
+The **OpenPrompt API key** field is separate — only needed if you set `OPENPROMPT_API_KEY` on the server.
 
 For CORS from the browser:
 

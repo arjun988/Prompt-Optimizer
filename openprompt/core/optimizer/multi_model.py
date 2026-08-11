@@ -87,10 +87,18 @@ def multi_model_optimize(
     tests_path: str | Path | None = None,
     api_key: str | None = None,
     base_url: str | None = None,
+    provider_keys: dict[str, str] | None = None,
 ) -> MultiModelOptimizeResult:
     """Optimize the same prompt across multiple models in parallel."""
     cfg = config or find_project_config()
     workers = cfg.optimizer.parallel_workers
+
+    def _resolve_key(spec: ModelSpec) -> str | None:
+        if provider_keys:
+            key = provider_keys.get(spec.provider)
+            if key:
+                return key
+        return api_key
 
     def _run_one(spec: ModelSpec) -> ModelOptimizeResult:
         from openprompt.sdk.client import OpenPrompt
@@ -99,7 +107,7 @@ def multi_model_optimize(
             provider=spec.provider,
             model=spec.model,
             config=cfg.model_copy_deep(),
-            api_key=api_key,
+            api_key=_resolve_key(spec),
             base_url=base_url,
             warn_mock=False,
         )

@@ -6,18 +6,26 @@ import { Header } from "@/components/layout/header";
 import { PromptEditor } from "@/components/shared/prompt-editor";
 import { RunBar, StrategySelect } from "@/components/shared/run-bar";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/status";
+import { TestSuiteEditor } from "@/components/shared/test-suite-editor";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label, Textarea } from "@/components/ui/input";
-import { ApiError, createApiClient, parseTestsYaml, useSettings } from "@/lib/api";
+import { ApiError, createApiClient, useSettings } from "@/lib/api";
+import { parseTests, type TestFormat } from "@/lib/test-formats";
 import type { MultiModelResponse } from "@/lib/types";
-import { DEFAULT_PROMPT, DEFAULT_TESTS } from "@/lib/types";
+import { DEFAULT_PROMPT, DEFAULT_TESTS, DEFAULT_TESTS_CSV, DEFAULT_TESTS_JSON } from "@/lib/types";
 
 const DEFAULT_MODELS = `mock:mock-model
 openai:gpt-5.6-terra
 anthropic:claude-sonnet-5
 google/gemini-3.6-flash
 x-ai/grok-4.3`;
+
+const DEFAULTS: Record<TestFormat, string> = {
+  yaml: DEFAULT_TESTS,
+  json: DEFAULT_TESTS_JSON,
+  csv: DEFAULT_TESTS_CSV,
+};
 
 function parseModels(raw: string) {
   return raw
@@ -36,19 +44,25 @@ function parseModels(raw: string) {
 export default function MultiModelPage() {
   const { settings, loaded } = useSettings();
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-  const [testsYaml, setTestsYaml] = useState(DEFAULT_TESTS);
+  const [testFormat, setTestFormat] = useState<TestFormat>("yaml");
+  const [testsRaw, setTestsRaw] = useState(DEFAULT_TESTS);
   const [modelsText, setModelsText] = useState(DEFAULT_MODELS);
   const [strategy, setStrategy] = useState("rewrite");
   const [result, setResult] = useState<MultiModelResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const onFormatChange = (format: TestFormat) => {
+    setTestFormat(format);
+    setTestsRaw(DEFAULTS[format]);
+  };
+
   const run = async () => {
     if (!loaded) return;
     setLoading(true);
     setError(null);
     try {
-      const tests = parseTestsYaml(testsYaml);
+      const tests = parseTests(testFormat, testsRaw);
       const models = parseModels(modelsText);
       const data = (await createApiClient(settings).multiModel({
         prompt,
@@ -81,10 +95,11 @@ export default function MultiModelPage() {
                 className="font-mono text-sm"
               />
             </div>
-            <PromptEditor
-              label="Tests (YAML)"
-              value={testsYaml}
-              onChange={setTestsYaml}
+            <TestSuiteEditor
+              format={testFormat}
+              onFormatChange={onFormatChange}
+              value={testsRaw}
+              onChange={setTestsRaw}
               rows={10}
             />
           </div>
@@ -95,7 +110,7 @@ export default function MultiModelPage() {
             {!loading && !error && !result && (
               <EmptyState
                 title="No comparison yet"
-                description="Add models and run to see quality vs cost tradeoffs."
+                description="Add models and tests (YAML, JSON, or CSV), then run."
               />
             )}
             {result && !loading && (

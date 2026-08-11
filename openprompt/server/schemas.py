@@ -34,6 +34,7 @@ class OptimizeRequest(BaseModel):
     strategy: str | None = "hybrid"
     provider: str = "mock"
     model: str = "mock-model"
+    api_key: str | None = None
     tests: list[dict[str, Any]] | None = None
     objective: str | None = None
     constraints: dict[str, Any] | None = None
@@ -59,6 +60,7 @@ class EvaluateRequest(BaseModel):
     prompt: str
     provider: str = "mock"
     model: str = "mock-model"
+    api_key: str | None = None
     tests: list[dict[str, Any]]
 
 
@@ -77,6 +79,7 @@ class BenchmarkRequest(BaseModel):
     prompts: list[str]
     provider: str = "mock"
     model: str = "mock-model"
+    api_key: str | None = None
 
 
 class BenchmarkResponse(BaseModel):
@@ -89,6 +92,7 @@ class CompressRequest(BaseModel):
     prompt: str
     provider: str = "mock"
     model: str = "mock-model"
+    api_key: str | None = None
 
 
 class ModelSpecRequest(BaseModel):
@@ -101,6 +105,7 @@ class MultiModelOptimizeRequest(BaseModel):
     models: list[ModelSpecRequest | str]
     strategy: str | None = "rewrite"
     tests: list[dict[str, Any]] | None = None
+    provider_keys: dict[str, str] | None = None
 
 
 class MultiModelOptimizeResponse(BaseModel):
@@ -115,6 +120,7 @@ class CostRecommendRequest(BaseModel):
     strategy: str = "rewrite"
     provider: str = "mock"
     model: str = "mock-model"
+    api_key: str | None = None
     min_quality: float | None = None
 
 

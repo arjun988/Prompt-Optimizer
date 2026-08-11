@@ -47,14 +47,20 @@ def map_http_error(provider: str, exc: Exception) -> ProviderError:
     lower = message.lower()
     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
 
+    if isinstance(exc, ImportError) or "pip install" in lower:
+        return ProviderError(message, provider=provider, status_code=501)
+    if isinstance(exc, ValueError) and "api key" in lower:
+        from openprompt.providers.errors import ProviderAuthError
+
+        return ProviderAuthError(message, provider=provider, status_code=401)
     if status == 401 or status == 403 or "api key" in lower or "unauthorized" in lower:
         from openprompt.providers.errors import ProviderAuthError
 
-        return ProviderAuthError(message, provider=provider, status_code=status)
+        return ProviderAuthError(message, provider=provider, status_code=status or 401)
     if status == 429 or "rate limit" in lower or "too many requests" in lower:
         return ProviderRateLimitError(message, provider=provider, status_code=429)
     if "timeout" in lower or "timed out" in lower:
         return ProviderTimeoutError(message, provider=provider)
     if status in {500, 502, 503, 504}:
         return ProviderUnavailableError(message, provider=provider, status_code=status)
-    return ProviderError(message, provider=provider, status_code=status)
+    return ProviderError(message, provider=provider, status_code=status or 502)

@@ -6,7 +6,7 @@ from openprompt import __version__
 from openprompt.config.models import ServerConfig
 from openprompt.core.dataset.models import load_dataset
 from openprompt.providers.errors import ProviderError
-from openprompt.sdk.client import OpenPrompt
+from openprompt.server.client_factory import openprompt_client
 from openprompt.server.dataset_handlers import run_dataset_eval, run_dataset_optimize
 from openprompt.server.dataset_upload import (
     parse_labels_json,
@@ -79,7 +79,8 @@ def create_app(server_config: ServerConfig | None = None):
 
     def _handle_provider_error(exc: Exception) -> None:
         if isinstance(exc, ProviderError):
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            code = exc.status_code if exc.status_code is not None else 502
+            raise HTTPException(status_code=code, detail=str(exc)) from exc
         raise exc
 
     @app.get("/health", response_model=HealthResponse)
@@ -88,7 +89,7 @@ def create_app(server_config: ServerConfig | None = None):
 
     @app.post("/lint", response_model=LintResponse)
     def lint_endpoint(body: LintRequest) -> LintResponse:
-        client = OpenPrompt(provider="mock", warn_mock=False)
+        client = openprompt_client("mock", "mock-model", warn_mock=False)
         report = client.lint(body.prompt)
         return LintResponse(
             score=report.score,
@@ -107,7 +108,7 @@ def create_app(server_config: ServerConfig | None = None):
     @app.post("/optimize", response_model=OptimizeResponse)
     def optimize_endpoint(body: OptimizeRequest) -> OptimizeResponse:
         try:
-            client = OpenPrompt(provider=body.provider, model=body.model)
+            client = openprompt_client(body.provider, body.model, api_key=body.api_key)
             with temp_tests_file(body.tests) as tests_path:
                 result = client.optimize(
                     body.prompt,
@@ -124,7 +125,7 @@ def create_app(server_config: ServerConfig | None = None):
     @app.post("/evaluate", response_model=EvaluateResponse)
     def evaluate_endpoint(body: EvaluateRequest) -> EvaluateResponse:
         try:
-            client = OpenPrompt(provider=body.provider, model=body.model)
+            client = openprompt_client(body.provider, body.model, api_key=body.api_key)
             with temp_tests_file(body.tests) as tests_path:
                 if tests_path is None:
                     raise HTTPException(status_code=400, detail="tests are required for /evaluate")
@@ -156,7 +157,7 @@ def create_app(server_config: ServerConfig | None = None):
     @app.post("/benchmark", response_model=BenchmarkResponse)
     def benchmark_endpoint(body: BenchmarkRequest) -> BenchmarkResponse:
         try:
-            client = OpenPrompt(provider=body.provider, model=body.model)
+            client = openprompt_client(body.provider, body.model, api_key=body.api_key)
             with temp_prompt_files(body.prompts) as paths:
                 report = client.benchmark(paths)
             return BenchmarkResponse(
@@ -171,7 +172,7 @@ def create_app(server_config: ServerConfig | None = None):
     @app.post("/compress", response_model=OptimizeResponse)
     def compress_endpoint(body: CompressRequest) -> OptimizeResponse:
         try:
-            client = OpenPrompt(provider=body.provider, model=body.model)
+            client = openprompt_client(body.provider, body.model, api_key=body.api_key)
             result = client.compress(body.prompt)
             return _optimize_response(result)
         except Exception as exc:
@@ -181,7 +182,7 @@ def create_app(server_config: ServerConfig | None = None):
     @app.post("/multi-model/optimize", response_model=MultiModelOptimizeResponse)
     def multi_model_endpoint(body: MultiModelOptimizeRequest) -> MultiModelOptimizeResponse:
         try:
-            client = OpenPrompt(provider="mock", warn_mock=False)
+            client = openprompt_client("mock", "mock-model", warn_mock=False)
             with temp_tests_file(body.tests) as tests_path:
                 models = [m if isinstance(m, str) else f"{m.provider}:{m.model}" for m in body.models]
                 result = client.multi_model_optimize(
@@ -189,6 +190,7 @@ def create_app(server_config: ServerConfig | None = None):
                     models,
                     strategy=body.strategy,
                     tests_path=tests_path,
+                    provider_keys=body.provider_keys,
                 )
             best_q = result.best_quality
             best_c = result.lowest_cost
@@ -205,7 +207,7 @@ def create_app(server_config: ServerConfig | None = None):
     @app.post("/cost/recommend", response_model=CostRecommendResponse)
     def cost_recommend_endpoint(body: CostRecommendRequest) -> CostRecommendResponse:
         try:
-            client = OpenPrompt(provider=body.provider, model=body.model)
+            client = openprompt_client(body.provider, body.model, api_key=body.api_key)
             result = client.optimize(body.prompt, strategy=body.strategy)
             rec = client.recommend_cost_quality(result, min_quality=body.min_quality)
             return CostRecommendResponse(
@@ -230,6 +232,8 @@ def create_app(server_config: ServerConfig | None = None):
 
             provider = str(form.get("provider", "mock"))
             model = str(form.get("model", "mock-model"))
+            api_key_raw = form.get("api_key")
+            api_key = str(api_key_raw).strip() if api_key_raw else None
             dataset_name = str(form.get("dataset_name", "upload"))
             labels = form.get("labels")
             schema = form.get("schema")
@@ -250,6 +254,7 @@ def create_app(server_config: ServerConfig | None = None):
                     dataset_dir,
                     provider=provider,
                     model=model,
+                    api_key=api_key,
                 )
             return DatasetEvalResponse(
                 accuracy=report.accuracy,
@@ -290,6 +295,8 @@ def create_app(server_config: ServerConfig | None = None):
 
             provider = str(form.get("provider", "mock"))
             model = str(form.get("model", "mock-model"))
+            api_key_raw = form.get("api_key")
+            api_key = str(api_key_raw).strip() if api_key_raw else None
             strategy = str(form.get("strategy", "extraction"))
             vision_raw = str(form.get("vision", "false")).lower()
             vision = vision_raw in {"1", "true", "yes", "on"}
@@ -316,6 +323,7 @@ def create_app(server_config: ServerConfig | None = None):
                     model=model,
                     strategy=strategy,
                     vision=vision,
+                    api_key=api_key,
                 )
             return DatasetOptimizeResponse(
                 prompt=result.prompt,
