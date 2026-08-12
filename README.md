@@ -6,8 +6,6 @@ Analyze. Optimize. Evaluate. Benchmark.
 
 OpenPrompt treats prompts like **code**: parse them into a structured AST, lint for quality issues, optimize with evaluation-driven strategies, and prove improvements with test suites — all from the CLI, Python SDK, REST API, or web dashboard.
 
-> **Note:** This project is unrelated to [THUNLP/OpenPrompt](https://github.com/thunlp/OpenPrompt) (prompt-learning for fine-tuning). The PyPI name `openprompt` is taken; install from source until a release name is chosen.
-
 ## Quick start
 
 Five commands from clone to your first optimized prompt — no API key required (uses the built-in `mock` provider):
