@@ -42,6 +42,18 @@ export function EvalBudgetSelect({
   testCount,
   modelCount = 1,
 }: EvalBudgetSelectProps) {
+  if (strategy === "reinforcement") {
+    const estimate = estimateOptimizeApiCalls(strategy, value, testCount, modelCount);
+    return (
+      <div className="space-y-1.5">
+        <Label>API budget</Label>
+        <p className="text-xs text-muted-foreground">
+          Low-call mode — {estimate.label}
+        </p>
+      </div>
+    );
+  }
+
   if (!usesEvalBudget(strategy)) {
     return null;
   }

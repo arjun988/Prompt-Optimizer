@@ -208,7 +208,7 @@ def validate_json_schema(data: Any, schema: dict[str, Any]) -> list[str]:
         return _validate_json_schema_minimal(data, schema)
 
 
-def run_evaluation(
+def run_batch_evaluation(
     ast: PromptAST,
     tests: list[TestCase],
     provider: ModelProvider,
@@ -222,7 +222,128 @@ def run_evaluation(
     holdout_ratio: float = 0.0,
     min_test_count: int = 3,
 ) -> EvalReport:
+    """Run all test cases in a single provider call (structured JSON response)."""
+    from openprompt.core.cost.pricing import estimate_cost_usd
+
+    warnings: list[str] = []
+    eval_tests, holdout_tests = _split_holdout(tests, holdout_ratio, min_test_count)
+    if holdout_tests:
+        warnings.append(
+            f"Holdout set: {len(holdout_tests)} test(s) reserved; optimize on {len(eval_tests)} only."
+        )
+    if len(tests) < min_test_count:
+        warnings.append(
+            f"Small test suite ({len(tests)} tests). Scores may overfit; add ≥{min_test_count} tests."
+        )
+
+    prompt_text = render_generic(ast)
+    prompt_tokens = estimate_tokens(prompt_text, model=model_name)
+    provider_format = _map_provider_format(provider_name)
+
+    messages = render_messages(ast, provider=provider_format)
+    batch_block = _format_batch_inputs(eval_tests)
+    batch_instruction = (
+        "\n\n---\n"
+        "Apply the prompt above to EACH input below. Return ONLY valid JSON:\n"
+        '{"responses": [{"test": "<test_name>", "output": "<your response>"}, ...]}\n\n'
+        f"{batch_block}"
+    )
+    if messages:
+        last = messages[-1]
+        messages = [*messages[:-1], Message(role=last.role, content=last.content + batch_instruction)]
+    else:
+        messages = [Message(role="user", content=batch_instruction.strip())]
+
+    response = provider.generate(messages)
+    total_cost = estimate_cost_usd(
+        response, provider=provider_name, model=model_name or getattr(provider, "model", None)
+    )
+    outputs = _parse_batch_outputs(response.content, eval_tests)
+    results: list[TestResult] = []
+    judge_scores: list[float] = []
+
+    for test in eval_tests:
+        output = outputs.get(test.name, "")
+        score, message = score_output(
+            output,
+            test,
+            judge_provider=judge_provider,
+            custom_eval_fn=custom_eval_fn,
+            plugin_evaluators=plugin_evaluators,
+        )
+        if test.metric == MetricType.LLM_JUDGE:
+            judge_scores.append(score)
+        results.append(
+            TestResult(
+                test=test,
+                passed=score >= pass_threshold,
+                score=score,
+                output=output,
+                message=message,
+            )
+        )
+
+    if holdout_tests:
+        holdout_report = run_batch_evaluation(
+            ast,
+            holdout_tests,
+            provider,
+            judge_provider=judge_provider,
+            custom_eval_fn=custom_eval_fn,
+            plugin_evaluators=plugin_evaluators,
+            provider_name=provider_name,
+            model_name=model_name,
+            pass_threshold=pass_threshold,
+            holdout_ratio=0.0,
+            min_test_count=0,
+        )
+        train_pass = sum(1 for r in results if r.passed) / max(1, len(results))
+        holdout_pass = holdout_report.pass_rate
+        if train_pass >= pass_threshold and holdout_pass < pass_threshold:
+            warnings.append(
+                f"Possible overfit: train pass {train_pass:.1%} but holdout pass {holdout_pass:.1%}."
+            )
+
+    return EvalReport(
+        results=results,
+        prompt_tokens=prompt_tokens,
+        total_cost_usd=total_cost,
+        total_latency_ms=response.latency_ms,
+        judge_score=(sum(judge_scores) / len(judge_scores)) if judge_scores else None,
+        warnings=warnings,
+    )
+
+
+def run_evaluation(
+    ast: PromptAST,
+    tests: list[TestCase],
+    provider: ModelProvider,
+    *,
+    judge_provider: ModelProvider | None = None,
+    custom_eval_fn: Callable[[str, str | None], float] | None = None,
+    plugin_evaluators: dict[str, Any] | None = None,
+    provider_name: str = "mock",
+    model_name: str | None = None,
+    pass_threshold: float = 0.85,
+    holdout_ratio: float = 0.0,
+    min_test_count: int = 3,
+    batch: bool = False,
+) -> EvalReport:
     """Run all test cases against a prompt AST."""
+    if batch and tests:
+        return run_batch_evaluation(
+            ast,
+            tests,
+            provider,
+            judge_provider=judge_provider,
+            custom_eval_fn=custom_eval_fn,
+            plugin_evaluators=plugin_evaluators,
+            provider_name=provider_name,
+            model_name=model_name,
+            pass_threshold=pass_threshold,
+            holdout_ratio=holdout_ratio,
+            min_test_count=min_test_count,
+        )
     from openprompt.core.cost.pricing import estimate_cost_usd
 
     warnings: list[str] = []
@@ -364,20 +485,94 @@ def resolve_prompt_in_directory(directory: Path) -> Path | None:
 
 
 def resolve_test_suite(prompt_path: Path) -> Path | None:
-    """Find tests.yaml for a prompt file or task directory."""
-    if prompt_path.is_dir():
-        candidate = prompt_path / "tests.yaml"
-        return candidate if candidate.exists() else None
+    """Find tests.yaml, tests.csv, or tests.json for a prompt file or task directory."""
+    test_names = ("tests.yaml", "tests.yml", "tests.csv", "tests.json")
 
-    candidates = [
-        prompt_path.parent / "tests.yaml",
-        prompt_path.parent / prompt_path.stem / "tests.yaml",
-        prompt_path.with_suffix(".tests.yaml"),
+    def _first_existing(directory: Path) -> Path | None:
+        for name in test_names:
+            candidate = directory / name
+            if candidate.exists():
+                return candidate
+        return None
+
+    if prompt_path.is_dir():
+        return _first_existing(prompt_path)
+
+    search_dirs = [
+        prompt_path.parent,
+        prompt_path.parent / prompt_path.stem,
     ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
+    for directory in search_dirs:
+        found = _first_existing(directory)
+        if found:
+            return found
+
+    suffix_candidate = prompt_path.with_suffix(".tests.yaml")
+    return suffix_candidate if suffix_candidate.exists() else None
+
+
+def _format_batch_inputs(tests: list[TestCase]) -> str:
+    lines = ["Test inputs:"]
+    for index, test in enumerate(tests, start=1):
+        lines.append(f"{index}. test_name: {test.name}")
+        lines.append(f"   input: {test.input.strip()}")
+    return "\n".join(lines)
+
+
+def _parse_batch_outputs(content: str, tests: list[TestCase]) -> dict[str, str]:
+    """Parse structured batch response; fall back to index order if names missing."""
+    parsed = _extract_batch_json(content)
+    if parsed is None:
+        return {test.name: content for test in tests}
+
+    raw_items = parsed.get("responses", parsed.get("results", []))
+    if not isinstance(raw_items, list):
+        return {test.name: content for test in tests}
+
+    by_name: dict[str, str] = {}
+    by_index: list[str] = []
+    for item in raw_items:
+        if isinstance(item, str):
+            by_index.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("test") or item.get("name") or item.get("test_name") or "").strip()
+        output = str(item.get("output") or item.get("response") or item.get("content") or "")
+        if name:
+            by_name[name] = output
+        else:
+            by_index.append(output)
+
+    outputs: dict[str, str] = {}
+    for index, test in enumerate(tests):
+        if test.name in by_name:
+            outputs[test.name] = by_name[test.name]
+        elif index < len(by_index):
+            outputs[test.name] = by_index[index]
+        else:
+            outputs[test.name] = ""
+    return outputs
+
+
+def _extract_batch_json(content: str) -> dict[str, Any] | None:
+    content = content.strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+
+    try:
+        data = json.loads(content)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", content)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(0))
+            return data if isinstance(data, dict) else None
+        except json.JSONDecodeError:
+            return None
 
 
 def _validate_json_schema_minimal(data: Any, schema: dict[str, Any]) -> list[str]:

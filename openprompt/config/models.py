@@ -43,7 +43,8 @@ class OptimizerConfig(BaseModel):
         "grpo",
         "few_shot",
         "extraction",
-    ] = "hybrid"
+        "reinforcement",
+    ] = "reinforcement"
     max_iterations: int = 5
     candidates_per_gen: int = 8
     eval_budget: int = 100
@@ -54,6 +55,7 @@ class OptimizerConfig(BaseModel):
     parallel_workers: int = 4
     few_shot_count: int = 3
     grpo_proposals: int = 4
+    reinforcement_rounds: int = 2
     auto_tune: bool = False
 
 

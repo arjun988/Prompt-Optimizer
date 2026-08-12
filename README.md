@@ -13,10 +13,10 @@ pip install -e .
 openprompt lint examples/summarize/prompt.txt
 
 # Optimize with bundled tests (mock provider — no API key)
-openprompt optimize examples/summarize --tests examples/summarize/tests.yaml --strategy hybrid
+openprompt optimize examples/summarize --tests examples/summarize/tests.csv --strategy reinforcement
 
-# Same tests as JSON or CSV
-openprompt optimize examples/summarize --tests examples/summarize/tests.json
+# Deep search when you need exhaustive exploration (many API calls)
+openprompt optimize examples/summarize --tests examples/summarize/tests.yaml --strategy hybrid
 openprompt eval examples/summarize --tests examples/summarize/tests.csv
 
 # Evaluate a task directory (prompt.txt + tests.yaml)
@@ -31,7 +31,7 @@ openprompt optimize examples/summarize --provider gemini --model gemini-3.6-flas
 
 - **Prompt AST (v1.1)** — Text/YAML → structured IR (RAG, agent/tools, media attachments)
 - **Linter** — Ambiguity, contradictions, missing output format (offline)
-- **Optimizer** — `rewrite`, `iterative`, `evolutionary`, `hybrid`, `compress`, `rag`, `agent`, `grpo`, `few_shot`, `extraction`
+- **Optimizer** — `reinforcement` (default, ~5–6 API calls), `rewrite`, `iterative`, `evolutionary`, `hybrid`, `compress`, `rag`, `agent`, `grpo`, `few_shot`, `extraction`
 - **Dataset extraction** — PDF/image samples + labeled JSON; optimize prompts for your data
 - **Evaluation** — Exact match, regex, JSON schema, semantic, LLM judge, plugin evaluators
 - **Multimodal** — PDF text extraction + vision attachments (OpenAI, Gemini)

@@ -4,12 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  DollarSign,
   FlaskConical,
   FileStack,
   Layers,
   LayoutDashboard,
-  Minimize2,
   ScanSearch,
   Settings,
   Sparkles,
@@ -24,10 +22,8 @@ const ICONS = {
   FlaskConical,
   FileStack,
   Sparkles,
-  Minimize2,
   BarChart3,
   Layers,
-  DollarSign,
   Settings,
 } as const;
 

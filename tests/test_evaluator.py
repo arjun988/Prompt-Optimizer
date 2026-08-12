@@ -5,6 +5,7 @@ from openprompt.core.evaluator.metrics import (
     load_test_suite,
     resolve_prompt_in_directory,
     resolve_test_suite,
+    run_batch_evaluation,
     run_evaluation,
     score_output,
 )
@@ -31,6 +32,32 @@ def test_resolve_directory_prompt(examples_dir: Path) -> None:
     task = examples_dir / "summarize"
     assert resolve_prompt_in_directory(task)
     assert resolve_test_suite(task)
+
+
+def test_run_batch_evaluation(examples_dir: Path, mock_provider: MockProvider) -> None:
+    prompt = examples_dir / "summarize" / "prompt.txt"
+    tests = load_test_suite(examples_dir / "summarize" / "tests.csv")
+    ast = parse_file(prompt)
+    report = run_batch_evaluation(ast, tests, mock_provider, provider_name="mock", model_name="mock-model")
+    assert len(report.results) == 3
+    assert report.accuracy > 0
+    assert report.total_cost_usd >= 0
+
+
+def test_batch_eval_matches_sequential(examples_dir: Path, mock_provider: MockProvider) -> None:
+    prompt = examples_dir / "summarize" / "prompt.txt"
+    tests = load_test_suite(examples_dir / "summarize" / "tests.yaml")
+    ast = parse_file(prompt)
+    batch = run_batch_evaluation(ast, tests, mock_provider, provider_name="mock", model_name="mock-model")
+    sequential = run_evaluation(ast, tests, mock_provider, provider_name="mock", model_name="mock-model")
+    assert len(batch.results) == len(sequential.results)
+
+
+def test_resolve_test_suite_csv(examples_dir: Path) -> None:
+    task = examples_dir / "summarize"
+    resolved = resolve_test_suite(task)
+    assert resolved is not None
+    assert resolved.name in {"tests.yaml", "tests.csv", "tests.json"}
 
 
 def _case(expected: str, metric: MetricType):

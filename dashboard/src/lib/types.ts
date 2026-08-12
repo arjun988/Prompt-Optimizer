@@ -50,9 +50,21 @@ export interface EvaluateResponse {
   results: EvaluateResult[];
 }
 
+export interface BenchmarkEntry {
+  name: string;
+  path: string;
+  lint_score: number;
+  eval_score: number;
+  tokens: number;
+  pass_rate: number;
+  cost_usd: number;
+  latency_ms: number;
+  judge_score: number | null;
+}
+
 export interface BenchmarkResponse {
   generated_at: string;
-  entries: Record<string, unknown>[];
+  entries: BenchmarkEntry[];
   markdown: string;
 }
 
@@ -113,6 +125,7 @@ export interface ApiSettings {
 }
 
 export const STRATEGIES = [
+  "reinforcement",
   "hybrid",
   "rewrite",
   "iterative",
@@ -202,9 +215,7 @@ export const NAV_ITEMS = [
   { href: "/evaluate", label: "Evaluate", icon: "FlaskConical" },
   { href: "/dataset", label: "Dataset", icon: "FileStack" },
   { href: "/optimize", label: "Optimize", icon: "Sparkles" },
-  { href: "/compress", label: "Compress", icon: "Minimize2" },
   { href: "/benchmark", label: "Benchmark", icon: "BarChart3" },
   { href: "/multi-model", label: "Multi-Model", icon: "Layers" },
-  { href: "/cost", label: "Cost", icon: "DollarSign" },
   { href: "/settings", label: "Settings", icon: "Settings" },
 ] as const;

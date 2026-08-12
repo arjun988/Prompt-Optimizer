@@ -5,7 +5,8 @@ model:
   name: mock-model
 
 optimizer:
-  strategy: hybrid
+  strategy: reinforcement
+  reinforcement_rounds: 2
   max_iterations: 5
   candidates_per_gen: 8
   eval_budget: 50

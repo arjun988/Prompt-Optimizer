@@ -55,6 +55,7 @@ def builtin_strategy_runners() -> dict[str, Callable[[PromptAST, StrategyContext
     from openprompt.core.optimizer.extraction_strategy import strategy_extraction, strategy_few_shot
     from openprompt.core.optimizer.grpo import strategy_grpo
     from openprompt.core.optimizer.rag_strategy import strategy_rag
+    from openprompt.core.optimizer.reinforcement_strategy import strategy_reinforcement
 
     return {
         "rewrite": _strategy_rewrite,
@@ -67,6 +68,7 @@ def builtin_strategy_runners() -> dict[str, Callable[[PromptAST, StrategyContext
         "grpo": strategy_grpo,
         "few_shot": strategy_few_shot,
         "extraction": strategy_extraction,
+        "reinforcement": strategy_reinforcement,
     }
 
 

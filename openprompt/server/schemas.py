@@ -31,7 +31,7 @@ class LintResponse(BaseModel):
 
 class OptimizeRequest(BaseModel):
     prompt: str
-    strategy: str | None = "hybrid"
+    strategy: str | None = "reinforcement"
     provider: str = "mock"
     model: str = "mock-model"
     api_key: str | None = None

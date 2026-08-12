@@ -38,7 +38,16 @@ class MockProvider:
     def _mock_response(self, messages: list[Message], digest: str) -> str:
         last = messages[-1].content.lower() if messages else ""
 
-        if "optimize" in last or "improve" in last:
+        if "responses" in last and ("test_name" in last or "test inputs" in last):
+            return (
+                '{"responses": ['
+                '{"test": "summary_has_bullets", "output": "- AI reshapes healthcare via diagnosis and automation\\n- Concerns: bias, privacy, regulation"}, '
+                '{"test": "summary_covers_topic", "output": "Remote work increased productivity for knowledge workers in 2024."}, '
+                '{"test": "non_empty_response", "output": "The market grew 12% year over year with sustained momentum."}'
+                "]}"
+            )
+
+        if "optimize" in last or "improve" in last or "test suite" in last:
             return (
                 "You are an expert assistant.\n\n"
                 "Task: Complete the requested analysis with clear, measurable criteria.\n\n"

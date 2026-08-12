@@ -37,7 +37,7 @@ const QUICK_ACTIONS = [
   {
     href: "/optimize",
     title: "Optimize",
-    description: "Improve prompts with hybrid, evolutionary, RAG, agent, or GRPO strategies.",
+    description: "Improve prompts with reinforcement, hybrid, or other eval-driven strategies.",
     icon: Sparkles,
   },
   {
@@ -49,7 +49,7 @@ const QUICK_ACTIONS = [
   {
     href: "/benchmark",
     title: "Benchmark",
-    description: "Score multiple prompts side-by-side and export markdown reports.",
+    description: "Compare named prompt variants with ranked scores and exportable reports.",
     icon: BarChart3,
   },
 ];

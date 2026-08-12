@@ -27,7 +27,7 @@ export default function OptimizePage() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [testFormat, setTestFormat] = useState<TestFormat>("yaml");
   const [testsRaw, setTestsRaw] = useState(DEFAULT_TESTS);
-  const [strategy, setStrategy] = useState("hybrid");
+  const [strategy, setStrategy] = useState("reinforcement");
   const [evalBudget, setEvalBudget] = useState(DEFAULT_EVAL_BUDGET);
   const [result, setResult] = useState<OptimizeResponse | null>(null);
   const [loading, setLoading] = useState(false);
